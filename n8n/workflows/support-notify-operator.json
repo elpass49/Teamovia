@@ -1,0 +1,164 @@
+{
+  "name": "Teamovia — Support : notification opérateur",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-notify-operator",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "node-webhook-in",
+      "name": "Webhook entrant",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "teamovia-support-notify"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "check-secret",
+              "leftValue": "={{ $('Webhook entrant').first().headers['x-webhook-secret'] }}",
+              "rightValue": "={{ $env.TEAMOVIA_WEBHOOK_SECRET }}",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "node-check-auth",
+      "name": "Vérifier signature",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Unauthorized\", \"code\": \"INVALID_SECRET\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "node-reject",
+      "name": "Rejeter — auth invalide",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook entrant').first().json;\n\n// Normalise les champs du payload\nreturn [{\n  json: {\n    event:        body.event        ?? 'message_in',\n    session_id:   body.session_id   ?? null,\n    workspace_id: body.workspace_id ?? null,\n    workspace_name: body.workspace_name ?? 'Teamovia',\n    user_ref:     body.user_ref     ?? 'Visiteur anonyme',\n    channel:      body.channel      ?? 'chat',\n    message_preview: body.message_preview ?? '',\n    priority:     body.priority     ?? 'normal',\n    dashboard_url: `https://app.teamovia.com/support?session=${body.session_id ?? ''}`,\n    timestamp:    new Date().toISOString(),\n  }\n}];"
+      },
+      "id": "node-normalize",
+      "name": "Normaliser le payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check-escalation",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "escalation",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "node-is-escalation",
+      "name": "Est une escalade ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.OPERATOR_EMAIL }}",
+        "subject": "=🚨 Escalade urgente — Session {{ $json.session_id.slice(0,8) }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e\">\n  <div style=\"background:#E74C3C;padding:16px 20px;border-radius:8px 8px 0 0\">\n    <h2 style=\"color:#fff;margin:0;font-size:16px\">🚨 Escalade urgente — {{ $json.workspace_name }}</h2>\n  </div>\n  <div style=\"background:#f8f9fa;padding:20px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px\">\n    <table style=\"width:100%;border-collapse:collapse\">\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Utilisateur</td><td style=\"font-weight:600;font-size:13px\">{{ $json.user_ref }}</td></tr>\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Canal</td><td style=\"font-size:13px\">{{ $json.channel }}</td></tr>\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Session</td><td style=\"font-size:13px;font-family:monospace\">{{ $json.session_id }}</td></tr>\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Priorité</td><td style=\"font-size:13px;color:#E74C3C;font-weight:600\">{{ $json.priority.toUpperCase() }}</td></tr>\n    </table>\n    {{ $json.message_preview ? `<div style=\"margin-top:12px;padding:12px;background:#fff;border-left:3px solid #E74C3C;font-size:13px\">{{ $json.message_preview }}</div>` : '' }}\n    <div style=\"margin-top:16px\">\n      <a href=\"{{ $json.dashboard_url }}\" style=\"display:inline-block;padding:10px 20px;background:#E74C3C;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600\">Voir la session</a>\n    </div>\n  </div>\n  <p style=\"color:#aaa;font-size:11px;margin-top:12px\">Teamovia · {{ $json.timestamp }}</p>\n</div>",
+        "options": {}
+      },
+      "id": "node-email-escalation",
+      "name": "Email — Escalade urgente",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 180],
+      "credentials": { "smtp": { "id": "smtp-teamovia", "name": "SMTP Teamovia" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.OPERATOR_EMAIL }}",
+        "subject": "=💬 Nouvelle session support — {{ $json.workspace_name }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family:sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e\">\n  <div style=\"background:#4F6EF7;padding:16px 20px;border-radius:8px 8px 0 0\">\n    <h2 style=\"color:#fff;margin:0;font-size:16px\">💬 Nouvelle session support — {{ $json.workspace_name }}</h2>\n  </div>\n  <div style=\"background:#f8f9fa;padding:20px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px\">\n    <table style=\"width:100%;border-collapse:collapse\">\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Utilisateur</td><td style=\"font-weight:600;font-size:13px\">{{ $json.user_ref }}</td></tr>\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Canal</td><td style=\"font-size:13px\">{{ $json.channel }}</td></tr>\n      <tr><td style=\"padding:6px 0;color:#666;font-size:13px\">Session</td><td style=\"font-size:13px;font-family:monospace\">{{ $json.session_id }}</td></tr>\n    </table>\n    {{ $json.message_preview ? `<div style=\"margin-top:12px;padding:12px;background:#fff;border-left:3px solid #4F6EF7;font-size:13px\">{{ $json.message_preview }}</div>` : '' }}\n    <div style=\"margin-top:16px\">\n      <a href=\"{{ $json.dashboard_url }}\" style=\"display:inline-block;padding:10px 20px;background:#4F6EF7;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600\">Voir la session</a>\n    </div>\n  </div>\n  <p style=\"color:#aaa;font-size:11px;margin-top:12px\">Teamovia · {{ $json.timestamp }}</p>\n</div>",
+        "options": {}
+      },
+      "id": "node-email-standard",
+      "name": "Email — Notification standard",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 420],
+      "credentials": { "smtp": { "id": "smtp-teamovia", "name": "SMTP Teamovia" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"notified\": true }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "node-respond-ok",
+      "name": "Répondre 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook entrant": {
+      "main": [[{ "node": "Vérifier signature", "type": "main", "index": 0 }]]
+    },
+    "Vérifier signature": {
+      "main": [
+        [{ "node": "Normaliser le payload", "type": "main", "index": 0 }],
+        [{ "node": "Rejeter — auth invalide", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normaliser le payload": {
+      "main": [[{ "node": "Est une escalade ?", "type": "main", "index": 0 }]]
+    },
+    "Est une escalade ?": {
+      "main": [
+        [{ "node": "Email — Escalade urgente",   "type": "main", "index": 0 }],
+        [{ "node": "Email — Notification standard", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email — Escalade urgente":    { "main": [[{ "node": "Répondre 200 OK", "type": "main", "index": 0 }]] },
+    "Email — Notification standard": { "main": [[{ "node": "Répondre 200 OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "teamovia"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "triggerCount": 1,
+  "tags": [
+    { "createdAt": "2026-07-12", "updatedAt": "2026-07-12", "id": "tag-support", "name": "support" },
+    { "createdAt": "2026-07-12", "updatedAt": "2026-07-12", "id": "tag-phase1",  "name": "phase-1" }
+  ]
+}

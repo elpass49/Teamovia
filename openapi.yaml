@@ -1,0 +1,1342 @@
+openapi: 3.1.0
+
+info:
+  title: Teamovia API
+  version: 1.0.0
+  description: |
+    API backend de la plateforme Teamovia — agent support client, agent ventes et orchestrateur.
+
+    ## Authentification
+    Toutes les routes requièrent un header `Authorization: Bearer <supabase_jwt>`.
+    Le JWT contient le `workspace_id` du tenant courant.
+    Les routes publiques (widget support) utilisent un `x-workspace-token` à la place.
+
+    ## Multi-tenant
+    L'isolation des données est garantie par RLS côté Supabase.
+    Le backend valide le `workspace_id` extrait du JWT sur chaque requête.
+
+  contact:
+    name: Teamovia
+    url: https://teamovia.com
+
+servers:
+  - url: https://api.teamovia.com/v1
+    description: Production
+  - url: https://api-staging.teamovia.com/v1
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Authentification et gestion des workspaces
+  - name: Support
+    description: Agent support client
+  - name: Sales
+    description: Agent ventes et qualification de leads
+  - name: Orchestrator
+    description: Handoff inter-agents et workflows
+  - name: Knowledge
+    description: Base de connaissances partagée
+  - name: Monitoring
+    description: Logs, métriques et supervision
+
+# ─────────────────────────────────────────
+# COMPOSANTS PARTAGÉS
+# ─────────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Supabase contenant workspace_id
+    WorkspaceToken:
+      type: apiKey
+      in: header
+      name: x-workspace-token
+      description: Token public pour le widget support embarquable
+
+  schemas:
+
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+        code:
+          type: string
+          example: AUTH_REQUIRED
+        details:
+          type: object
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        has_more:
+          type: boolean
+
+    # ── Auth ──
+
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        plan:
+          type: string
+          enum: [starter, pro, enterprise]
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Support ──
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        user_ref:
+          type: string
+          description: Identifiant externe de l'utilisateur final (email, id, anonymous)
+        channel:
+          type: string
+          enum: [chat, email, form]
+        status:
+          type: string
+          enum: [open, resolved, escalated, transferred]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    MessageResponse:
+      type: object
+      required: [message, session_id]
+      properties:
+        message:
+          $ref: '#/components/schemas/Message'
+        session_id:
+          type: string
+          format: uuid
+        action_triggered:
+          type: string
+          nullable: true
+          enum: [HANDOFF_TO_SALES, ESCALATE_TO_HUMAN, null]
+          description: Action backend déclenchée automatiquement suite à la réponse
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open, in_progress, closed]
+        priority:
+          type: string
+          enum: [low, normal, high, urgent]
+        assignee:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Sales ──
+
+    LeadScore:
+      type: object
+      required: [score, confidence, dimensions, reasons, recommended_action]
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        confidence:
+          type: string
+          enum: [low, medium, high]
+        dimensions:
+          type: object
+          properties:
+            besoin:
+              type: integer
+              minimum: 0
+              maximum: 25
+            budget:
+              type: integer
+              minimum: 0
+              maximum: 25
+            delai:
+              type: integer
+              minimum: 0
+              maximum: 25
+            decisionnaire:
+              type: integer
+              minimum: 0
+              maximum: 25
+        reasons:
+          type: array
+          items:
+            type: string
+        disqualifiers:
+          type: array
+          items:
+            type: string
+        recommended_action:
+          type: string
+          enum: [qualify, nurture, disqualify]
+        next_step:
+          type: string
+          nullable: true
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        source:
+          type: string
+          enum: [form, chat, email, handoff, import]
+        status:
+          type: string
+          enum: [new, qualifying, qualified, transferred, lost]
+        score:
+          type: integer
+          nullable: true
+        score_data:
+          $ref: '#/components/schemas/LeadScore'
+          nullable: true
+        data:
+          type: object
+          description: Données collectées pendant la qualification (champs libres)
+        assigned_to:
+          type: string
+          format: uuid
+          nullable: true
+        qualified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Knowledge ──
+
+    KnowledgeChunk:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: null = chunk partagé entre tous les agents du workspace
+        content:
+          type: string
+        source:
+          type: string
+          enum: [manual, url, file]
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Monitoring ──
+
+    AgentLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+          nullable: true
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+        event_type:
+          type: string
+          enum: [message_in, message_out, tool_call, handoff, escalation, error]
+        payload:
+          type: object
+        latency_ms:
+          type: integer
+          nullable: true
+        tokens_used:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+# ─────────────────────────────────────────
+# SECURITY GLOBAL
+# ─────────────────────────────────────────
+
+security:
+  - BearerAuth: []
+
+# ─────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────
+
+paths:
+
+  # ══════════════════════════════════════
+  # AUTH & WORKSPACE
+  # ══════════════════════════════════════
+
+  /workspace:
+    get:
+      tags: [Auth]
+      summary: Récupère le workspace courant
+      description: Retourne le workspace associé au JWT de l'utilisateur connecté.
+      responses:
+        '200':
+          description: Workspace courant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workspace/members:
+    get:
+      tags: [Auth]
+      summary: Liste les membres du workspace
+      responses:
+        '200':
+          description: Liste des membres
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: string
+                          format: uuid
+                        email:
+                          type: string
+                        role:
+                          type: string
+                          enum: [owner, admin, viewer]
+
+  # ══════════════════════════════════════
+  # AGENT SUPPORT — SESSIONS
+  # ══════════════════════════════════════
+
+  /agents/support/sessions:
+    get:
+      tags: [Support]
+      summary: Liste les sessions de support
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, resolved, escalated, transferred]
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [chat, email, form]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Liste paginée des sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [Support]
+      summary: Crée une nouvelle session de support
+      description: |
+        Utilisé par le widget embarquable pour initier une conversation.
+        Accepte `x-workspace-token` à la place du JWT pour les appels publics.
+      security:
+        - BearerAuth: []
+        - WorkspaceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_ref:
+                  type: string
+                  description: Email, ID ou identifiant anonyme de l'utilisateur final
+                channel:
+                  type: string
+                  enum: [chat, email, form]
+                  default: chat
+                metadata:
+                  type: object
+                  description: Données contextuelles optionnelles (page d'origine, UTM, etc.)
+      responses:
+        '201':
+          description: Session créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+
+  /agents/support/sessions/{session_id}:
+    get:
+      tags: [Support]
+      summary: Détail d'une session avec ses messages
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session et historique des messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Support]
+      summary: Met à jour le statut d'une session
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [open, resolved, escalated, transferred]
+      responses:
+        '200':
+          description: Session mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+
+  # ══════════════════════════════════════
+  # AGENT SUPPORT — MESSAGES
+  # ══════════════════════════════════════
+
+  /agents/support/sessions/{session_id}/message:
+    post:
+      tags: [Support]
+      summary: Envoie un message et obtient la réponse de l'agent
+      description: |
+        Route principale du widget support.
+        Le backend :
+        1. Récupère le contexte de session et la mémoire client
+        2. Interroge la base de connaissances (RAG)
+        3. Appelle le LLM avec le prompt injecté
+        4. Enregistre la réponse et les logs
+        5. Déclenche les actions nécessaires (handoff, escalade)
+      security:
+        - BearerAuth: []
+        - WorkspaceToken: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                metadata:
+                  type: object
+                  description: Données optionnelles (device, localisation, etc.)
+      responses:
+        '200':
+          description: Réponse de l'agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ══════════════════════════════════════
+  # AGENT SUPPORT — ESCALADE
+  # ══════════════════════════════════════
+
+  /agents/support/sessions/{session_id}/escalate:
+    post:
+      tags: [Support]
+      summary: Escalade une session vers un humain
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Raison de l'escalade
+                priority:
+                  type: string
+                  enum: [low, normal, high, urgent]
+                  default: normal
+      responses:
+        '200':
+          description: Escalade déclenchée, ticket créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket:
+                    $ref: '#/components/schemas/Ticket'
+                  session:
+                    $ref: '#/components/schemas/Session'
+
+  # ══════════════════════════════════════
+  # AGENT SUPPORT — BASE DE CONNAISSANCES
+  # ══════════════════════════════════════
+
+  /agents/support/kb:
+    post:
+      tags: [Support, Knowledge]
+      summary: Ajoute un chunk manuel à la KB de l'agent support
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 10
+                source:
+                  type: string
+                  enum: [manual, url, file]
+                  default: manual
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Chunk créé et vectorisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeChunk'
+
+  /agents/support/kb/sync:
+    post:
+      tags: [Support, Knowledge]
+      summary: Synchronise la KB depuis une URL ou un fichier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: URL à scraper et indexer
+                file_path:
+                  type: string
+                  description: Chemin vers un fichier uploadé dans Supabase Storage
+      responses:
+        '202':
+          description: Synchronisation lancée en arrière-plan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending]
+
+  # ══════════════════════════════════════
+  # AGENT VENTES — LEADS
+  # ══════════════════════════════════════
+
+  /agents/sales/leads:
+    get:
+      tags: [Sales]
+      summary: Liste les leads du workspace
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, qualifying, qualified, transferred, lost]
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [form, chat, email, handoff, import]
+        - name: min_score
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: assigned_to
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, updated_at, score]
+            default: created_at
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Liste paginée des leads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Lead'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [Sales]
+      summary: Crée un nouveau lead
+      description: |
+        Utilisé pour les leads entrants depuis un formulaire, un import CSV ou une intégration externe.
+        Les leads issus d'un handoff support sont créés automatiquement par l'orchestrateur.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+                company:
+                  type: string
+                source:
+                  type: string
+                  enum: [form, chat, email, import]
+                  default: form
+                data:
+                  type: object
+                  description: Données collectées dans le formulaire ou l'intégration
+      responses:
+        '201':
+          description: Lead créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+
+  /agents/sales/leads/{lead_id}:
+    get:
+      tags: [Sales]
+      summary: Fiche lead complète avec historique
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Lead et historique des messages de qualification
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  crm_sync:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        crm_name:
+                          type: string
+                        crm_id:
+                          type: string
+                        status:
+                          type: string
+                        synced_at:
+                          type: string
+                          format: date-time
+
+    patch:
+      tags: [Sales]
+      summary: Met à jour un lead manuellement
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [new, qualifying, qualified, transferred, lost]
+                assigned_to:
+                  type: string
+                  format: uuid
+                data:
+                  type: object
+      responses:
+        '200':
+          description: Lead mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+
+  /agents/sales/leads/{lead_id}/message:
+    post:
+      tags: [Sales]
+      summary: Envoie un message de qualification et obtient la réponse de l'agent
+      description: |
+        Route principale de l'interface de qualification.
+        Le backend suit le même pipeline que l'agent support :
+        RAG → LLM → log → action.
+        En plus, il parse le bloc JSON de scoring dans la réponse et met à jour `leads.score_data`.
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+      responses:
+        '200':
+          description: Réponse de l'agent + score mis à jour si disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/Message'
+                  score_updated:
+                    type: boolean
+                  score_data:
+                    $ref: '#/components/schemas/LeadScore'
+                    nullable: true
+                  action_triggered:
+                    type: string
+                    nullable: true
+                    enum: [CREATE_QUALIFIED_LEAD, ESCALATE_TO_HUMAN, DISQUALIFY_LEAD, null]
+
+  /agents/sales/leads/{lead_id}/qualify:
+    post:
+      tags: [Sales]
+      summary: Déclenche une qualification IA sur les données existantes
+      description: |
+        Calcule ou recalcule le score à partir des données déjà collectées
+        sans nécessiter un nouveau message de l'utilisateur.
+        Utile pour qualifier en batch des leads importés.
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Score calculé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+                  score_data:
+                    $ref: '#/components/schemas/LeadScore'
+
+  /agents/sales/leads/{lead_id}/sync-crm:
+    post:
+      tags: [Sales]
+      summary: Pousse le lead vers un CRM externe
+      description: Déclenche le workflow n8n de synchronisation CRM.
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                crm_name:
+                  type: string
+                  enum: [hubspot, airtable, pipedrive, notion]
+                  description: CRM cible — doit être configuré dans les intégrations du workspace
+      responses:
+        '200':
+          description: Synchronisation déclenchée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  crm_name:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, success, error]
+                  job_id:
+                    type: string
+
+  /agents/sales/leads/{lead_id}/sequence:
+    post:
+      tags: [Sales]
+      summary: Démarre une séquence email automatique
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sequence_id]
+              properties:
+                sequence_id:
+                  type: string
+                  description: Identifiant de la séquence configurée dans n8n
+      responses:
+        '200':
+          description: Séquence démarrée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sequence_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [started]
+
+  # ══════════════════════════════════════
+  # ORCHESTRATEUR
+  # ══════════════════════════════════════
+
+  /orchestrator/handoff:
+    post:
+      tags: [Orchestrator]
+      summary: Transfère une session entre deux agents
+      description: |
+        Déclenché par un agent quand il détecte qu'une autre compétence est nécessaire.
+        Crée le contexte partagé, notifie l'agent cible et met à jour les statuts.
+        Le workflow n8n correspondant est déclenché en arrière-plan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, target_agent]
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                target_agent:
+                  type: string
+                  enum: [sales, support, human]
+                context:
+                  type: object
+                  description: |
+                    Résumé du contexte à transmettre à l'agent cible.
+                    Le backend complète automatiquement avec l'historique de la session.
+                  properties:
+                    summary:
+                      type: string
+                    intent:
+                      type: string
+                    user_data:
+                      type: object
+      responses:
+        '200':
+          description: Handoff déclenché
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  handoff_id:
+                    type: string
+                    format: uuid
+                  source_session_id:
+                    type: string
+                    format: uuid
+                  target_agent:
+                    type: string
+                  lead_id:
+                    type: string
+                    format: uuid
+                    nullable: true
+                    description: Créé automatiquement si target_agent = sales
+                  status:
+                    type: string
+                    enum: [pending, completed]
+
+  # ══════════════════════════════════════
+  # BASE DE CONNAISSANCES PARTAGÉE
+  # ══════════════════════════════════════
+
+  /knowledge:
+    get:
+      tags: [Knowledge]
+      summary: Liste les chunks de la KB du workspace
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filtre par agent — omis = chunks partagés uniquement
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [manual, url, file]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Liste des chunks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chunks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeChunk'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /knowledge/{chunk_id}:
+    delete:
+      tags: [Knowledge]
+      summary: Supprime un chunk de la KB
+      parameters:
+        - name: chunk_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Chunk supprimé
+
+  /knowledge/search:
+    post:
+      tags: [Knowledge]
+      summary: Recherche sémantique dans la KB
+      description: Utilisé en interne par les agents. Exposé aussi pour les tests et le debug.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                agent_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: null = recherche dans toute la KB du workspace
+                limit:
+                  type: integer
+                  default: 5
+                  maximum: 20
+      responses:
+        '200':
+          description: Résultats de la recherche sémantique
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        chunk:
+                          $ref: '#/components/schemas/KnowledgeChunk'
+                        similarity:
+                          type: number
+                          format: float
+                          minimum: 0
+                          maximum: 1
+
+  # ══════════════════════════════════════
+  # MONITORING
+  # ══════════════════════════════════════
+
+  /monitoring/logs:
+    get:
+      tags: [Monitoring]
+      summary: Logs d'activité des agents
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [message_in, message_out, tool_call, handoff, escalation, error]
+        - name: session_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        '200':
+          description: Liste paginée des logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentLog'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /monitoring/metrics:
+    get:
+      tags: [Monitoring]
+      summary: Métriques agrégées du workspace
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filtre par agent — omis = métriques globales
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: week
+      responses:
+        '200':
+          description: Métriques agrégées
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    type: string
+                  sessions_total:
+                    type: integer
+                  sessions_resolved:
+                    type: integer
+                  sessions_escalated:
+                    type: integer
+                  leads_total:
+                    type: integer
+                  leads_qualified:
+                    type: integer
+                  avg_score:
+                    type: number
+                  avg_latency_ms:
+                    type: integer
+                  tokens_used_total:
+                    type: integer
+                  handoffs_total:
+                    type: integer
+
+# ─────────────────────────────────────────
+# RÉPONSES D'ERREUR COMMUNES
+# ─────────────────────────────────────────
+
+  /monitoring/metrics:
+    get:
+      tags: [Monitoring]
+
+components:
+  responses:
+    Unauthorized:
+      description: Token manquant ou invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
+            code: AUTH_REQUIRED
+
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Not found
+            code: NOT_FOUND
+
+    ValidationError:
+      description: Données invalides
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Validation error
+            code: INVALID_INPUT
+            details:
+              content: Required field missing
