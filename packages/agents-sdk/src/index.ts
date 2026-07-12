@@ -25,3 +25,6 @@ export { getAgentMemory,
 export type { AgentMemory }           from './memory'
 
 export { triggerN8nWebhook }          from './n8n'
+
+export { ingestText }                 from './ingest'
+export type { IngestResult }          from './ingest'
