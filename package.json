@@ -1,0 +1,19 @@
+{
+  "name": "teamovia",
+  "version": "1.0.0",
+  "description": "AI-powered multi-agent platform for support and sales automation",
+  "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "keywords": ["ai", "agents", "support", "sales", "automation"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "turbo": "^2.4.0"
+  }
+}
