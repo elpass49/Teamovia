@@ -3,14 +3,15 @@
  * Génère un vecteur d'embedding pour un texte donné.
  *
  * Provider configuré via EMBEDDING_PROVIDER :
- *   - 'openai'  → text-embedding-3-small (1536 dims) — défaut
- *   - 'voyage'  → voyage-3-lite          (1024 dims) — plus économique
+ *   - 'openai'   → text-embedding-3-small (1536 dims) — défaut
+ *   - 'voyage'   → voyage-3-lite          (1024 dims) — plus économique
+ *   - 'deepseek' → deepseek-embedding     (1024 dims) — économique + local
  *
  * IMPORTANT : si tu changes de provider, une migration SQL est nécessaire
  * pour modifier vector(1536) → vector(1024) dans knowledge_chunks.embedding
  */
 
-const PROVIDER = (process.env.EMBEDDING_PROVIDER ?? 'openai') as 'openai' | 'voyage'
+const PROVIDER = (process.env.EMBEDDING_PROVIDER ?? 'openai') as 'openai' | 'voyage' | 'deepseek'
 
 // ─────────────────────────────────────────────────────────────
 // OpenAI
@@ -83,6 +84,44 @@ async function embedWithVoyage(text: string): Promise<number[]> {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Deepseek
+// ─────────────────────────────────────────────────────────────
+
+async function embedWithDeepseek(text: string): Promise<number[]> {
+  const apiKey = process.env.DEEPSEEK_API_KEY
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY manquant')
+
+  const baseUrl = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1'
+
+  const res = await fetch(`${baseUrl}/embeddings`, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-embedding',
+      input: text.slice(0, 8191), // limite de tokens
+      encoding_format: 'float',
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Deepseek embedding error ${res.status}: ${err}`)
+  }
+
+  const data = await res.json() as {
+    data: Array<{ embedding: number[] }>
+  }
+
+  const embedding = data.data[0]?.embedding
+  if (!embedding) throw new Error('Deepseek: réponse embedding vide')
+
+  return embedding
+}
+
+// ─────────────────────────────────────────────────────────────
 // Export principal
 // ─────────────────────────────────────────────────────────────
 
@@ -101,6 +140,7 @@ export async function embedText(text: string): Promise<number[]> {
   switch (PROVIDER) {
     case 'openai':  return embedWithOpenAI(cleaned)
     case 'voyage':  return embedWithVoyage(cleaned)
+    case 'deepseek': return embedWithDeepseek(cleaned)
     default:        throw new Error(`Provider d'embedding inconnu : ${PROVIDER}`)
   }
 }
