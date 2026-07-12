@@ -1,0 +1,26 @@
+{
+  "name": "@teamovia/prompts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Teamovia prompts — system prompt injection and templating for agents",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./inject": {
+      "types": "./dist/src/inject.d.ts",
+      "default": "./dist/src/inject.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src --max-warnings 0",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "eslint": "^8.54.0"
+  }
+}

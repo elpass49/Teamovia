@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@teamovia/agents-sdk": ["./packages/agents-sdk/src"],
+      "@teamovia/prompts": ["./packages/prompts/src"],
+      "@teamovia/types": ["./packages/types/src"],
+      "@teamovia/types/*": ["./packages/types/src/*"],
+      "@/*": ["./apps/dashboard/src/*"]
+    }
+  },
+  "include": ["packages/**/*.ts", "services/**/*.ts", "apps/**/*.ts", "apps/**/*.tsx"],
+  "exclude": ["node_modules", "dist", ".next", "coverage", "**/*.test.ts"]
+}

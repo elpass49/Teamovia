@@ -1,0 +1,12 @@
+{
+  "name": "@teamovia/agent-support",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Teamovia support agent widget — embeddable chat for customer support",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Static widget - no dev server needed; serve src/ with any HTTP server'",
+    "build": "echo 'Static widget - no build required'",
+    "lint": "echo 'No linting for static widget'"
+  }
+}
