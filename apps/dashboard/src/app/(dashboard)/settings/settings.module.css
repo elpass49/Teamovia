@@ -1,0 +1,366 @@
+/* Dark theme — identique au dashboard */
+:root {
+  --c-bg: #0f1117;
+  --c-bg-alt: #161b22;
+  --c-bg-tertiary: #21262d;
+  --c-accent: #4f6ef7;
+  --c-accent-alt: #3d5be8;
+  --c-text: #c9d1d9;
+  --c-text-secondary: #8b949e;
+  --c-border: #30363d;
+  --c-green: #3fb950;
+  --c-orange: #d29922;
+  --c-red: #f85149;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  overflow-y: auto;
+}
+
+.header {
+  padding: 2rem;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Tabs */
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--c-border);
+  background-color: var(--c-bg-alt);
+  gap: 0;
+}
+
+.tab {
+  flex: 0 1 auto;
+  padding: 1rem 1.5rem;
+  background-color: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--c-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  color: var(--c-text);
+  border-bottom-color: var(--c-border);
+}
+
+.tab.active {
+  color: var(--c-accent);
+  border-bottom-color: var(--c-accent);
+}
+
+/* Content */
+
+.content {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+/* Sections */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.subsection {
+  padding: 1.5rem;
+  background-color: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--c-text);
+}
+
+/* Forms */
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--c-text);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input,
+.textarea {
+  padding: 0.75rem;
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  color: var(--c-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.1);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 100px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--c-text-secondary);
+}
+
+/* Buttons */
+
+.actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.btnPrimary,
+.btnSecondary,
+.btnDanger {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btnPrimary {
+  background-color: var(--c-accent);
+  color: white;
+  border-color: var(--c-accent);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background-color: var(--c-accent-alt);
+  border-color: var(--c-accent-alt);
+}
+
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  background-color: transparent;
+  color: var(--c-text);
+  border-color: var(--c-border);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background-color: var(--c-bg-alt);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.btnDanger {
+  background-color: transparent;
+  color: var(--c-red);
+  border-color: var(--c-border);
+}
+
+.btnDanger:hover:not(:disabled) {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: var(--c-red);
+}
+
+/* Tables */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table thead {
+  background-color: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--c-border);
+  transition: background-color 0.15s ease;
+}
+
+.table tbody tr:hover {
+  background-color: rgba(79, 110, 247, 0.05);
+}
+
+.table td {
+  padding: 1rem;
+  color: var(--c-text);
+}
+
+.emptyState {
+  padding: 2rem;
+  text-align: center;
+  color: var(--c-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Agent Cards */
+
+.agentCard {
+  padding: 1.5rem;
+  background-color: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.agentHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.agentName {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Toggle Switch */
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.toggle input {
+  display: none;
+}
+
+.toggleSlider {
+  width: 44px;
+  height: 24px;
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.toggleSlider::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background-color: var(--c-text-secondary);
+  border-radius: 50%;
+  top: 1px;
+  left: 1px;
+  transition: all 0.15s ease;
+}
+
+.toggle input:checked + .toggleSlider {
+  background-color: var(--c-green);
+  border-color: var(--c-green);
+}
+
+.toggle input:checked + .toggleSlider::after {
+  left: 22px;
+  background-color: white;
+}
+
+/* Integration Cards */
+
+.integrationCard {
+  padding: 1.5rem;
+  background-color: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.integrationHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+}
+
+.integrationName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.integrationStatus {
+  font-size: 0.875rem;
+  color: var(--c-text-secondary);
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background-color: rgba(63, 185, 80, 0.2);
+  color: var(--c-green);
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.integrationCard .toggle input:not(:checked) + .toggleSlider {
+  background-color: var(--c-bg);
+}
