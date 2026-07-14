@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Route : POST /agents/support/sessions/:sessionId/message
  *
  * C'est la route principale de l'agent support.
- * Elle reçoit un message utilisateur, exécute le pipeline complet
- * (RAG → LLM → log → actions) et retourne la réponse de l'agent.
+ * Elle reÃ§oit un message utilisateur, exÃ©cute le pipeline complet
+ * (RAG â†’ LLM â†’ log â†’ actions) et retourne la rÃ©ponse de l'agent.
  *
  * Auth : JWT Supabase OU x-workspace-token (widget embarquable)
- * Quota : vérifié avant l'exécution (messages/mois)
+ * Quota : vÃ©rifiÃ© avant l'exÃ©cution (messages/mois)
  */
 
 import { Hono }                  from 'hono'
@@ -17,23 +17,23 @@ import { createAgentRunner }     from '@teamovia/agents-sdk'
 import {
   workspaceMiddleware,
   type WorkspaceContext,
-} from '../../middleware/validate-workspace'
+} from '../../middleware/validate-workspace.js'
 
-// ─────────────────────────────────────────────────────────────
-// Schéma de validation
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// SchÃ©ma de validation
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const MessageSchema = z.object({
   content: z
     .string()
-    .min(1,    'Le message ne peut pas être vide')
-    .max(4000, 'Message trop long (max 4000 caractères)'),
+    .min(1,    'Le message ne peut pas Ãªtre vide')
+    .max(4000, 'Message trop long (max 4000 caractÃ¨res)'),
   metadata: z.record(z.unknown()).optional().default({}),
 })
 
-// ─────────────────────────────────────────────────────────────
-// Helper : récupérer l'agent support du workspace
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helper : rÃ©cupÃ©rer l'agent support du workspace
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getSupportAgent(workspaceId: string): Promise<{
   id:   string
@@ -57,9 +57,9 @@ async function getSupportAgent(workspaceId: string): Promise<{
   return { id: data.id as string, name: data.name as string }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper : vérifier que la session appartient au workspace
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helper : vÃ©rifier que la session appartient au workspace
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function validateSession(
   sessionId:   string,
@@ -80,7 +80,7 @@ async function validateSession(
 
   if (error || !data) return null
 
-  // Refuser les sessions déjà clôturées
+  // Refuser les sessions dÃ©jÃ  clÃ´turÃ©es
   if (data.status === 'resolved' || data.status === 'transferred') {
     return null
   }
@@ -88,9 +88,9 @@ async function validateSession(
   return { user_ref: data.user_ref as string | null }
 }
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Route handler
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const messageRoute = new Hono()
 
@@ -112,25 +112,25 @@ messageRoute.post(
     const sessionId = c.req.param('sessionId')
     const body      = c.req.valid('json')
 
-    // ── Vérification de la session ─────────────────────────
+    // â”€â”€ VÃ©rification de la session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const session = await validateSession(sessionId, ctx.workspaceId)
     if (!session) {
       return c.json(
-        { error: 'Session introuvable ou déjà clôturée', code: 'SESSION_NOT_FOUND' },
+        { error: 'Session introuvable ou dÃ©jÃ  clÃ´turÃ©e', code: 'SESSION_NOT_FOUND' },
         404
       )
     }
 
-    // ── Récupération de l'agent support ────────────────────
+    // â”€â”€ RÃ©cupÃ©ration de l'agent support â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const agent = await getSupportAgent(ctx.workspaceId)
     if (!agent) {
       return c.json(
-        { error: 'Agent support non configuré pour ce workspace', code: 'AGENT_NOT_FOUND' },
+        { error: 'Agent support non configurÃ© pour ce workspace', code: 'AGENT_NOT_FOUND' },
         404
       )
     }
 
-    // ── Exécution du pipeline agent ────────────────────────
+    // â”€â”€ ExÃ©cution du pipeline agent â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let result
     try {
       result = await createAgentRunner({
@@ -144,9 +144,10 @@ messageRoute.post(
       })
     } catch (err) {
       // Log l'erreur dans agent_logs sans crasher le serveur
+      console.error('[support/message] catch error:', err)
       console.error('[support/message] Runner error:', err)
 
-      // Réponse de fallback à l'utilisateur
+      // RÃ©ponse de fallback Ã  l'utilisateur
       return c.json(
         {
           error:   'Une erreur est survenue lors du traitement de votre message.',
@@ -155,7 +156,7 @@ messageRoute.post(
             id:         crypto.randomUUID(),
             session_id: sessionId,
             role:       'assistant',
-            content:    'Je rencontre une difficulté technique momentanée. Merci de réessayer dans quelques instants.',
+            content:    'Je rencontre une difficultÃ© technique momentanÃ©e. Merci de rÃ©essayer dans quelques instants.',
             created_at: new Date().toISOString(),
           },
         },
@@ -163,7 +164,7 @@ messageRoute.post(
       )
     }
 
-    // ── Réponse ────────────────────────────────────────────
+    // â”€â”€ RÃ©ponse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return c.json({
       message: {
         id:          crypto.randomUUID(),
@@ -182,10 +183,10 @@ messageRoute.post(
   }
 )
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Route : POST /agents/support/sessions
-// Crée une nouvelle session (utilisé par le widget embarquable)
-// ─────────────────────────────────────────────────────────────
+// CrÃ©e une nouvelle session (utilisÃ© par le widget embarquable)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const CreateSessionSchema = z.object({
   user_ref:  z.string().optional(),
@@ -206,7 +207,7 @@ messageRoute.post(
     const agent = await getSupportAgent(ctx.workspaceId)
     if (!agent) {
       return c.json(
-        { error: 'Agent support non configuré', code: 'AGENT_NOT_FOUND' },
+        { error: 'Agent support non configurÃ©', code: 'AGENT_NOT_FOUND' },
         404
       )
     }
@@ -229,10 +230,12 @@ messageRoute.post(
       })
       .select()
       .single()
+    console.log('[DEBUG] agent:', agent)
+    console.log('[DEBUG] session lookup done')
 
     if (error || !session) {
       return c.json(
-        { error: 'Impossible de créer la session', code: 'SESSION_CREATE_ERROR' },
+        { error: 'Impossible de crÃ©er la session', code: 'SESSION_CREATE_ERROR' },
         500
       )
     }
@@ -241,14 +244,14 @@ messageRoute.post(
   }
 )
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Route : GET /agents/support/sessions
-// Liste les sessions (dashboard opérateur)
-// ─────────────────────────────────────────────────────────────
+// Liste les sessions (dashboard opÃ©rateur)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 messageRoute.get(
   '/sessions',
-  workspaceMiddleware(),   // JWT uniquement — pas de widget
+  workspaceMiddleware(),   // JWT uniquement â€” pas de widget
   async (c) => {
     const ctx     = c.get('workspace') as WorkspaceContext
     const status  = c.req.query('status')
@@ -290,10 +293,10 @@ messageRoute.get(
   }
 )
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Route : GET /agents/support/sessions/:sessionId
-// Détail + messages d'une session
-// ─────────────────────────────────────────────────────────────
+// DÃ©tail + messages d'une session
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 messageRoute.get(
   '/sessions/:sessionId',
@@ -332,3 +335,4 @@ messageRoute.get(
     })
   }
 )
+

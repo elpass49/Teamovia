@@ -18,7 +18,7 @@ import { triggerN8nWebhook }   from '@teamovia/agents-sdk'
 import {
   workspaceMiddleware,
   type WorkspaceContext,
-} from '../middleware/validate-workspace'
+} from '../middleware/validate-workspace.js'
 
 // ─────────────────────────────────────────────────────────────
 // Schémas de validation
