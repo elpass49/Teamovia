@@ -5,6 +5,7 @@ import { logger } from 'hono/logger'
 import { orchestratorRoute } from './routes/orchestrator.js'
 import { messageRoute as supportMessageRoute } from './agents/support/message.js'
 import { salesRoute } from './agents/sales/message.js'
+import { knowledgeRoute } from './routes/knowledge.js'
 
 const app = new Hono()
 
@@ -21,6 +22,7 @@ app.use(cors({
 app.route('/v1/agents/support', supportMessageRoute)
 app.route('/v1/agents/sales',   salesRoute)
 app.route('/v1/orchestrator',   orchestratorRoute)
+app.route('/v1/knowledge', knowledgeRoute)
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
