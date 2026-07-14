@@ -8,7 +8,7 @@
  *   3. Rechercher dans la KB (RAG)
  *   4. Construire le prompt système avec les variables injectées
  *   5. Récupérer l'historique des messages de la session
- *   6. Appeler le LLM (AI SDK 7 + Anthropic)
+ *   6. Appeler le LLM (AI SDK 7 + Anthropic) ou mock si MOCK_LLM=true
  *   7. Persister le message assistant
  *   8. Logger l'événement
  *   9. Détecter et déclencher les actions post-réponse
@@ -31,21 +31,21 @@ import { buildSystemPrompt }     from '@teamovia/prompts'
 // ─────────────────────────────────────────────────────────────
 
 export type AgentRunnerOptions = {
-  agentType:    'support' | 'sales'
-  agentId:      string
-  workspaceId:  string
+  agentType:     'support' | 'sales'
+  agentId:       string
+  workspaceId:   string
   workspaceName: string
-  sessionId?:   string   // support
-  leadId?:      string   // sales
-  userRef?:     string   // identifiant externe de l'utilisateur final
-  userMessage:  string
+  sessionId?:    string
+  leadId?:       string
+  userRef?:      string
+  userMessage:   string
 }
 
 export type AgentRunnerResult = {
-  text:             string
-  tokensUsed:       number
-  latencyMs:        number
-  actionTriggered:  'HANDOFF_TO_SALES' | 'ESCALATE_TO_HUMAN' | null
+  text:            string
+  tokensUsed:      number
+  latencyMs:       number
+  actionTriggered: 'HANDOFF_TO_SALES' | 'ESCALATE_TO_HUMAN' | null
 }
 
 type DbMessage = {
@@ -54,10 +54,51 @@ type DbMessage = {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Mode MOCK_LLM
+// Activé via MOCK_LLM=true dans .env.local
+// Retourne une réponse simulée sans appeler l'API Anthropic
+// ─────────────────────────────────────────────────────────────
+
+function getMockResponse(agentType: 'support' | 'sales', userMessage: string): string {
+  const preview = userMessage.slice(0, 60)
+
+  if (agentType === 'support') {
+    return `[MODE TEST] Bonjour, je vous réponds au nom de l'équipe support.\n\nVotre message "${preview}..." a bien été reçu.\n\nCeci est une réponse simulée — MOCK_LLM=true est activé dans .env.local.`
+  }
+
+  // Agent ventes — inclut un bloc JSON de scoring simulé
+  return `[MODE TEST] Merci pour votre message concernant "${preview}...".
+
+Je vais analyser votre besoin.
+
+\`\`\`json
+{
+  "score": 65,
+  "confidence": "medium",
+  "dimensions": {
+    "besoin": 18,
+    "budget": 15,
+    "delai": 17,
+    "decisionnaire": 15
+  },
+  "reasons": [
+    "Besoin identifié dans le message",
+    "Intention d'achat détectée",
+    "Score simulé — MOCK_LLM=true"
+  ],
+  "disqualifiers": [],
+  "recommended_action": "nurture",
+  "next_step": "Proposer un appel de découverte"
+}
+\`\`\`
+
+Ceci est une réponse simulée — MOCK_LLM=true est activé.`
+}
+
+// ─────────────────────────────────────────────────────────────
 // Helpers internes
 // ─────────────────────────────────────────────────────────────
 
-/** Client Supabase server-side (bypass RLS) */
 function serverClient() {
   return createClient(
     process.env.SUPABASE_URL!,
@@ -66,7 +107,6 @@ function serverClient() {
   )
 }
 
-/** Récupère les N derniers messages d'une session pour le contexte LLM */
 async function getSessionMessages(
   sessionId: string,
   limit = 20
@@ -84,7 +124,6 @@ async function getSessionMessages(
   return (data ?? []) as DbMessage[]
 }
 
-/** Récupère le contexte d'une session */
 async function getSessionContext(sessionId: string): Promise<{
   channel:        string
   status:         string
@@ -109,7 +148,6 @@ async function getSessionContext(sessionId: string): Promise<{
   }
 }
 
-/** Persiste un message dans la table messages */
 async function saveMessage(
   sessionId:  string,
   role:       'user' | 'assistant',
@@ -134,26 +172,19 @@ async function saveMessage(
 // Détection d'actions post-réponse
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Détecte si la réponse de l'agent indique une intention commerciale.
- * Cherche les marqueurs textuels que le prompt système est configuré à produire.
- */
 function detectSalesHandoff(text: string): boolean {
   const markers = [
     'HANDOFF_TO_SALES',
-    'transmets à l\'équipe en charge des ventes',
-    'transmets à l\'équipe commerciale',
+    "transmets à l'équipe en charge des ventes",
+    "transmets à l'équipe commerciale",
   ]
   return markers.some(m => text.includes(m))
 }
 
-/**
- * Détecte si la réponse de l'agent indique une escalade vers un humain.
- */
 function detectEscalation(text: string): boolean {
   const markers = [
     'ESCALATE_TO_HUMAN',
-    'nécessite l\'intervention d\'un membre',
+    "nécessite l'intervention d'un membre",
     'viens de transmettre votre dossier',
   ]
   return markers.some(m => text.includes(m))
@@ -177,6 +208,7 @@ export async function createAgentRunner(
   } = options
 
   const startTime = Date.now()
+  const isMock    = process.env.MOCK_LLM === 'true'
 
   // ── 1. Contexte de session ──────────────────────────────────
   const sessionCtx = sessionId
@@ -189,41 +221,39 @@ export async function createAgentRunner(
     : null
 
   // ── 3. RAG — vectorisation + recherche KB ──────────────────
-  const embedding = await embedText(userMessage)
-  const chunks    = await matchKnowledge(
-    embedding,
-    workspaceId,
-    agentId,
-    5,    // max 5 chunks
-    0.5   // similarité minimum
-  )
+  // En mode mock, on saute l'embedding pour éviter tout appel API
+  const chunks = isMock ? [] : await (async () => {
+    const embedding = await embedText(userMessage)
+    return matchKnowledge(embedding, workspaceId, agentId, 5, 0.5)
+  })()
 
-  // Log de l'appel entrant (avant la réponse)
+  // Log de l'appel entrant
   await writeAgentLog(
     workspaceId, agentId, sessionId ?? null,
     'message_in',
     {
-      content_length: userMessage.length,
-      channel:        sessionCtx?.channel ?? 'unknown',
+      content_length:  userMessage.length,
+      channel:         sessionCtx?.channel ?? 'unknown',
       kb_chunks_found: chunks.length,
+      mock:            isMock,
     }
   )
 
   // ── 4. Prompt système ────────────────────────────────────────
   const systemPrompt = buildSystemPrompt(agentType, {
-    COMPANY_NAME:       workspaceName,
-    WORKSPACE_ID:       workspaceId,
-    CHANNEL:            sessionCtx?.channel,
-    CURRENT_DATETIME:   new Date().toISOString(),
-    TICKET_STATUS:      sessionCtx?.sessionContext?.ticket_status as string | undefined,
-    AGENT_MEMORY:       formatMemoryForPrompt(memory),
-    KB_CHUNKS:          formatChunksForPrompt(chunks),
-    ESCALATION_TEAM:    'notre équipe', // TODO : lire depuis workspaces.escalation_config
-    HANDOFF_CONTEXT:    undefined,
-    LEAD_MEMORY:        undefined,
-    LEAD_SOURCE:        undefined,
-    LEAD_STATUS:        undefined,
-    LEAD_SCORE:         undefined,
+    COMPANY_NAME:     workspaceName,
+    WORKSPACE_ID:     workspaceId,
+    CHANNEL:          sessionCtx?.channel,
+    CURRENT_DATETIME: new Date().toISOString(),
+    TICKET_STATUS:    sessionCtx?.sessionContext?.ticket_status as string | undefined,
+    AGENT_MEMORY:     formatMemoryForPrompt(memory),
+    KB_CHUNKS:        formatChunksForPrompt(chunks),
+    ESCALATION_TEAM:  'notre équipe',
+    HANDOFF_CONTEXT:  undefined,
+    LEAD_MEMORY:      undefined,
+    LEAD_SOURCE:      undefined,
+    LEAD_STATUS:      undefined,
+    LEAD_SCORE:       undefined,
   })
 
   // ── 5. Historique des messages ──────────────────────────────
@@ -231,8 +261,6 @@ export async function createAgentRunner(
     ? await getSessionMessages(sessionId, 20)
     : []
 
-  // Construire les messages pour le LLM
-  // Le message utilisateur courant est ajouté à la fin
   const llmMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     ...history
       .filter(m => m.role !== 'system')
@@ -240,25 +268,33 @@ export async function createAgentRunner(
     { role: 'user', content: userMessage },
   ]
 
-  // ── 6. Appel LLM (AI SDK 7) ─────────────────────────────────
+  // ── 6. Appel LLM ou Mock ─────────────────────────────────────
   const model     = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'
   const maxTokens = 1024
 
-  const { text, usage } = await generateText({
-    model:      anthropic(model),
-    system:     systemPrompt,
-    messages:   llmMessages,
-    maxTokens,
-  })
+  let text: string
+  let tokensUsed = 0
 
-  const latencyMs  = Date.now() - startTime
-  const tokensUsed = (usage?.totalTokens ?? 0)
+  if (isMock) {
+    console.log(`[runner] MOCK_LLM=true — réponse simulée (${agentType})`)
+    text = getMockResponse(agentType, userMessage)
+    await new Promise(r => setTimeout(r, 300)) // simule latence réseau
+  } else {
+    const result = await generateText({
+      model:    anthropic(model),
+      system:   systemPrompt,
+      messages: llmMessages,
+      maxTokens,
+    })
+    text       = result.text
+    tokensUsed = result.usage?.totalTokens ?? 0
+  }
+
+  const latencyMs = Date.now() - startTime
 
   // ── 7. Persistance des messages ─────────────────────────────
   if (sessionId) {
-    // Persister d'abord le message utilisateur
-    await saveMessage(sessionId, 'user', userMessage)
-    // Puis la réponse assistant avec les métriques
+    await saveMessage(sessionId, 'user',      userMessage)
     await saveMessage(sessionId, 'assistant', text, tokensUsed, latencyMs)
   }
 
@@ -268,14 +304,13 @@ export async function createAgentRunner(
   if (agentType === 'support') {
     if (detectSalesHandoff(text)) {
       actionTriggered = 'HANDOFF_TO_SALES'
-      // Déclencher le workflow n8n de handoff (fire-and-forget)
       triggerN8nWebhook('agent-handoff', {
         session_id:   sessionId,
         workspace_id: workspaceId,
         target:       'sales',
         context: {
-          summary:   `Prospect depuis session support ${sessionId}`,
-          user_ref:  userRef,
+          summary:  `Prospect depuis session support ${sessionId}`,
+          user_ref: userRef,
         },
       }).catch(err => console.warn('[n8n] Handoff webhook failed:', err))
 
@@ -296,8 +331,9 @@ export async function createAgentRunner(
     {
       kb_chunks_used:   chunks.length,
       action_triggered: actionTriggered,
+      mock:             isMock,
     },
-    { latencyMs, tokensUsed, modelUsed: model }
+    { latencyMs, tokensUsed, modelUsed: isMock ? 'mock' : model }
   )
 
   return { text, tokensUsed, latencyMs, actionTriggered }
