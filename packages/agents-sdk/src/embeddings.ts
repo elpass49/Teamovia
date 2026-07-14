@@ -1,17 +1,20 @@
-/**
+﻿/**
  * embedText
  * Génère un vecteur d'embedding pour un texte donné.
  *
  * Provider configuré via EMBEDDING_PROVIDER :
- *   - 'openai'   → text-embedding-3-small (1536 dims) — défaut
- *   - 'voyage'   → voyage-3-lite          (1024 dims) — plus économique
- *   - 'deepseek' → deepseek-embedding     (1024 dims) — économique + local
+ *   - 'openai'  → text-embedding-3-small (1536 dims) — défaut
+ *   - 'voyage'  → voyage-3-lite          (1024 dims) — plus économique
+ *   - 'none'    → désactivé (retourne tableau vide, pas de RAG)
  *
  * IMPORTANT : si tu changes de provider, une migration SQL est nécessaire
- * pour modifier vector(1536) → vector(1024) dans knowledge_chunks.embedding
+ * pour modifier vector(1536) dans knowledge_chunks.embedding
  */
 
-const PROVIDER = (process.env.EMBEDDING_PROVIDER ?? 'openai') as 'openai' | 'voyage' | 'deepseek'
+const PROVIDER = (process.env.EMBEDDING_PROVIDER ?? 'none') as
+  | 'openai'
+  | 'voyage'
+  | 'none'
 
 // ─────────────────────────────────────────────────────────────
 // OpenAI
@@ -29,7 +32,7 @@ async function embedWithOpenAI(text: string): Promise<number[]> {
     },
     body: JSON.stringify({
       model: 'text-embedding-3-small',
-      input: text.slice(0, 8191), // limite de tokens du modèle
+      input: text.slice(0, 8191),
     }),
   })
 
@@ -38,13 +41,9 @@ async function embedWithOpenAI(text: string): Promise<number[]> {
     throw new Error(`OpenAI embedding error ${res.status}: ${err}`)
   }
 
-  const data = await res.json() as {
-    data: Array<{ embedding: number[] }>
-  }
-
+  const data = await res.json() as { data: Array<{ embedding: number[] }> }
   const embedding = data.data[0]?.embedding
   if (!embedding) throw new Error('OpenAI: réponse embedding vide')
-
   return embedding
 }
 
@@ -73,51 +72,9 @@ async function embedWithVoyage(text: string): Promise<number[]> {
     throw new Error(`Voyage embedding error ${res.status}: ${err}`)
   }
 
-  const data = await res.json() as {
-    data: Array<{ embedding: number[] }>
-  }
-
+  const data = await res.json() as { data: Array<{ embedding: number[] }> }
   const embedding = data.data[0]?.embedding
   if (!embedding) throw new Error('Voyage: réponse embedding vide')
-
-  return embedding
-}
-
-// ─────────────────────────────────────────────────────────────
-// Deepseek
-// ─────────────────────────────────────────────────────────────
-
-async function embedWithDeepseek(text: string): Promise<number[]> {
-  const apiKey = process.env.DEEPSEEK_API_KEY
-  if (!apiKey) throw new Error('DEEPSEEK_API_KEY manquant')
-
-  const baseUrl = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1'
-
-  const res = await fetch(`${baseUrl}/embeddings`, {
-    method:  'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      model: 'deepseek-embedding',
-      input: text.slice(0, 8191), // limite de tokens
-      encoding_format: 'float',
-    }),
-  })
-
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Deepseek embedding error ${res.status}: ${err}`)
-  }
-
-  const data = await res.json() as {
-    data: Array<{ embedding: number[] }>
-  }
-
-  const embedding = data.data[0]?.embedding
-  if (!embedding) throw new Error('Deepseek: réponse embedding vide')
-
   return embedding
 }
 
@@ -127,20 +84,20 @@ async function embedWithDeepseek(text: string): Promise<number[]> {
 
 /**
  * Génère un embedding pour un texte.
- * Utilise le provider configuré dans EMBEDDING_PROVIDER.
- *
- * @param text - Texte à vectoriser (nettoyé automatiquement)
- * @returns Vecteur de nombres flottants
+ * Si EMBEDDING_PROVIDER=none ou non configuré, retourne [] (RAG désactivé).
  */
 export async function embedText(text: string): Promise<number[]> {
-  // Nettoyage basique : supprime les espaces excessifs et les sauts de ligne multiples
   const cleaned = text.trim().replace(/\s+/g, ' ')
-  if (!cleaned) throw new Error('embedText: texte vide')
+  if (!cleaned) return []
 
   switch (PROVIDER) {
-    case 'openai':  return embedWithOpenAI(cleaned)
-    case 'voyage':  return embedWithVoyage(cleaned)
-    case 'deepseek': return embedWithDeepseek(cleaned)
-    default:        throw new Error(`Provider d'embedding inconnu : ${PROVIDER}`)
+    case 'openai':
+      return embedWithOpenAI(cleaned)
+    case 'voyage':
+      return embedWithVoyage(cleaned)
+    case 'none':
+    default:
+      console.warn(`[embeddings] Provider '${PROVIDER}' — embeddings désactivés, RAG ignoré`)
+      return []
   }
 }

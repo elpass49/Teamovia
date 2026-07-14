@@ -59,6 +59,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^0.0.40
         version: 0.0.40(zod@3.25.76)
+      '@ai-sdk/deepseek':
+        specifier: ^3.0.7
+        version: 3.0.7(zod@3.25.76)
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.7
         version: 3.0.7(zod@3.25.76)
@@ -159,6 +162,12 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.0.0
+
+  '@ai-sdk/deepseek@3.0.7':
+    resolution: {integrity: sha512-XtY5eBUUE2fjcm1rprHowPVhh79knuBoiWzd+cI8ANf0hanOxRnHc8JpvC4KWMqoweGz4EOAnC3BR/fyGdAhhw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/openai-compatible@3.0.7':
     resolution: {integrity: sha512-y8RVpm8BZKNHDxlbNVt/GYmoBBqLx10m4d7bOzOnRD8V2aP3Cr6/g/bfubR4EkbW1ySrnPr62svZIeND2fdp3Q==}
@@ -2999,6 +3008,12 @@ snapshots:
     dependencies:
       '@ai-sdk/provider': 0.0.18
       '@ai-sdk/provider-utils': 1.0.10(zod@3.25.76)
+      zod: 3.25.76
+
+  '@ai-sdk/deepseek@3.0.7(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.3
+      '@ai-sdk/provider-utils': 5.0.7(zod@3.25.76)
       zod: 3.25.76
 
   '@ai-sdk/openai-compatible@3.0.7(zod@3.25.76)':

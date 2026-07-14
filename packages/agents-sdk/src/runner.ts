@@ -1,90 +1,31 @@
 /**
  * createAgentRunner
  * Pipeline principal d'exécution d'un agent.
- * Supporte DeepSeek et Anthropic via LLM_PROVIDER env var.
- *
- * Ordre d'exécution :
- *   1. Récupérer le contexte (session ou lead) + mémoire agent
- *   2. Vectoriser le message entrant
- *   3. Rechercher dans la KB (RAG)
- *   4. Construire le prompt système avec les variables injectées
- *   5. Récupérer l'historique des messages de la session
- *   6. Appeler le LLM (DeepSeek ou Anthropic) ou mock si MOCK_LLM=true
- *   7. Persister le message assistant
- *   8. Logger l'événement
- *   9. Détecter et déclencher les actions post-réponse
+ * Supporte DeepSeek (fetch direct) et Anthropic (AI SDK 7).
  */
 
 import { generateText }          from 'ai'
 import { anthropic }             from '@ai-sdk/anthropic'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createClient }          from '@supabase/supabase-js'
-import { embedText }             from './embeddings'
+import { embedText }             from './embeddings.js'
 import { matchKnowledge,
-         formatChunksForPrompt } from './knowledge'
-import { writeAgentLog }         from './logs'
+         formatChunksForPrompt } from './knowledge.js'
+import { writeAgentLog }         from './logs.js'
 import { getAgentMemory,
-         formatMemoryForPrompt } from './memory'
-import { triggerN8nWebhook }     from './n8n'
+         formatMemoryForPrompt } from './memory.js'
+import { triggerN8nWebhook }     from './n8n.js'
 import { buildSystemPrompt }     from '@teamovia/prompts'
 
 // ─────────────────────────────────────────────────────────────
-// Provider LLM
-// Configuré via LLM_PROVIDER=deepseek | anthropic dans .env.local
-// ─────────────────────────────────────────────────────────────
-
-function getLLMModel() {
-  const provider = process.env.LLM_PROVIDER ?? 'anthropic'
-
-  if (provider === 'deepseek') {
-    const deepseek = createOpenAICompatible({
-      name:    'deepseek',
-      baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
-      apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
-    })
-    const model = process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'
-    console.log(`[runner] LLM provider: DeepSeek (${model})`)
-    return { model: deepseek(model), modelId: `deepseek/${model}` }
-  }
-
-  // Défaut : Anthropic
-  const model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'
-  console.log(`[runner] LLM provider: Anthropic (${model})`)
-  return { model: anthropic(model), modelId: `anthropic/${model}` }
-}
-
-// ─────────────────────────────────────────────────────────────
 // Mode MOCK_LLM
-// Activé via MOCK_LLM=true dans .env.local
 // ─────────────────────────────────────────────────────────────
 
 function getMockResponse(agentType: 'support' | 'sales', userMessage: string): string {
   const preview = userMessage.slice(0, 60)
-
   if (agentType === 'support') {
     return `[MODE TEST] Bonjour, je vous réponds au nom de l'équipe support.\n\nVotre message "${preview}..." a bien été reçu.\n\nCeci est une réponse simulée — MOCK_LLM=true est activé.`
   }
-
-  return `[MODE TEST] Merci pour votre message concernant "${preview}...".
-
-\`\`\`json
-{
-  "score": 65,
-  "confidence": "medium",
-  "dimensions": {
-    "besoin": 18,
-    "budget": 15,
-    "delai": 17,
-    "decisionnaire": 15
-  },
-  "reasons": ["Besoin identifié", "Intention détectée", "Score simulé — MOCK_LLM=true"],
-  "disqualifiers": [],
-  "recommended_action": "nurture",
-  "next_step": "Proposer un appel de découverte"
-}
-\`\`\`
-
-Réponse simulée — MOCK_LLM=true activé.`
+  return `[MODE TEST] Merci pour votre message concernant "${preview}...". Score simulé : 65/100. MOCK_LLM=true activé.`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -114,6 +55,11 @@ type DbMessage = {
   content: string
 }
 
+type DeepSeekResponse = {
+  choices: Array<{ message: { content: string } }>
+  usage?: { total_tokens?: number }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Helpers internes
 // ─────────────────────────────────────────────────────────────
@@ -134,7 +80,6 @@ async function getSessionMessages(sessionId: string, limit = 20): Promise<DbMess
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true })
     .limit(limit)
-
   if (error) throw new Error(`getSessionMessages error: ${error.message}`)
   return (data ?? []) as DbMessage[]
 }
@@ -151,7 +96,6 @@ async function getSessionContext(sessionId: string): Promise<{
     .select('channel, status, session_context, shared_context')
     .eq('id', sessionId)
     .single()
-
   if (error || !data) throw new Error(`Session introuvable : ${sessionId}`)
   return {
     channel:        data.channel as string,
@@ -177,6 +121,49 @@ async function saveMessage(
     latency_ms:  latencyMs,
   })
   if (error) throw new Error(`saveMessage error: ${error.message}`)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Appel DeepSeek via fetch direct
+// ─────────────────────────────────────────────────────────────
+
+async function callDeepSeek(
+  systemPrompt: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<{ text: string; tokensUsed: number }> {
+  const apiKey   = process.env.DEEPSEEK_API_KEY ?? ''
+  const baseUrl  = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1'
+  const model    = process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'
+
+  const payload = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+    max_tokens: 1024,
+  }
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`DeepSeek API error ${res.status}: ${err}`)
+  }
+
+  const data = await res.json() as DeepSeekResponse
+  const text = data.choices[0]?.message?.content ?? ''
+  const tokensUsed = data.usage?.total_tokens ?? 0
+
+  console.log(`[runner] DeepSeek response length: ${text.length}, tokens: ${tokensUsed}`)
+  return { text, tokensUsed }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -213,6 +200,7 @@ export async function createAgentRunner(
 
   const startTime = Date.now()
   const isMock    = process.env.MOCK_LLM === 'true'
+  const provider  = process.env.LLM_PROVIDER ?? 'anthropic'
 
   // ── 1. Contexte de session ──────────────────────────────────
   const sessionCtx = sessionId ? await getSessionContext(sessionId) : null
@@ -222,9 +210,10 @@ export async function createAgentRunner(
     ? await getAgentMemory(workspaceId, agentId, userRef)
     : null
 
-  // ── 3. RAG — vectorisation + recherche KB ──────────────────
+  // ── 3. RAG ──────────────────────────────────────────────────
   const chunks = isMock ? [] : await (async () => {
     const embedding = await embedText(userMessage)
+    if (!embedding || embedding.length === 0) return []
     return matchKnowledge(embedding, workspaceId, agentId, 5, 0.5)
   })()
 
@@ -274,17 +263,22 @@ export async function createAgentRunner(
     console.log(`[runner] MOCK_LLM=true — réponse simulée (${agentType})`)
     text = getMockResponse(agentType, userMessage)
     await new Promise(r => setTimeout(r, 300))
+  } else if (provider === 'deepseek') {
+    modelId = `deepseek/${process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'}`
+    console.log(`[runner] LLM provider: DeepSeek`)
+    const result = await callDeepSeek(systemPrompt, llmMessages)
+    text       = result.text
+    tokensUsed = result.tokensUsed
   } else {
-    const { model, modelId: mid } = getLLMModel()
-    modelId = mid
-
+    modelId = `anthropic/${process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'}`
+    console.log(`[runner] LLM provider: Anthropic`)
     const result = await generateText({
-      model,
+      model:     anthropic(process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6'),
       system:    systemPrompt,
       messages:  llmMessages,
       maxTokens: 1024,
     })
-    text       = result.text
+    text       = result.text ?? ''
     tokensUsed = result.usage?.totalTokens ?? 0
   }
 
