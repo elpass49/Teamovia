@@ -6,12 +6,12 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
-      "default": "./dist/src/index.js"
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
     },
     "./inject": {
-      "types": "./dist/src/inject.d.ts",
-      "default": "./dist/src/inject.js"
+            "types": "./dist/inject.d.ts",
+            "default": "./dist/inject.js"
     }
   },
   "scripts": {
