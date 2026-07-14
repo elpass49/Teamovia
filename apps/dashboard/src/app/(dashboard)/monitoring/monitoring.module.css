@@ -1,5 +1,5 @@
 /* Dark theme — identique au dashboard */
-:global(:root) {
+.page {
   --c-bg: #0f1117;
   --c-bg-alt: #161b22;
   --c-bg-tertiary: #21262d;
