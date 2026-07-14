@@ -57,7 +57,6 @@ type ChartDataPoint = {
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-const COLORS = ['#4f6ef7', '#3fb950', '#f85149', '#d29922', '#1f6feb', '#bc8ef7']
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
