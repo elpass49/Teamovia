@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teamovia Widget</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f0f0f0; min-height: 100vh; }
+
+    :root {
+      --c-bg: #0F1117;
+      --c-surface: #181C27;
+      --c-surface-2: #1E2336;
+      --c-border: #2A3048;
+      --c-accent: #4F6EF7;
+      --c-accent-soft: rgba(79,110,247,.12);
+      --c-user-bubble: #1E2E6B;
+      --c-text: #E8EAEE;
+      --c-text-muted: #7A839A;
+      --c-text-faint: #454D66;
+      --c-success: #2ECC71;
+      --c-error: #E74C3C;
+      --shadow-lg: 0 24px 64px rgba(0,0,0,.6);
+    }
+
+    #tw-launcher {
+      position: fixed; bottom: 24px; right: 24px;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: var(--c-accent); border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 24px rgba(79,110,247,.45);
+      transition: transform 180ms ease, box-shadow 180ms ease;
+      z-index: 9998;
+    }
+    #tw-launcher:hover { transform: scale(1.08); }
+    #tw-launcher svg { color: #fff; }
+    #tw-launcher .icon-open  { display: block; }
+    #tw-launcher .icon-close { display: none; }
+    #tw-launcher.open .icon-open  { display: none; }
+    #tw-launcher.open .icon-close { display: block; }
+
+    #tw-badge {
+      position: absolute; top: -4px; right: -4px;
+      width: 18px; height: 18px; background: var(--c-error);
+      border-radius: 50%; font-size: 10px; font-weight: 700;
+      color: #fff; display: none; align-items: center; justify-content: center;
+    }
+    #tw-badge.visible { display: flex; }
+
+    #tw-window {
+      position: fixed; bottom: 92px; right: 24px;
+      width: 380px; max-height: 600px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 24px; box-shadow: var(--shadow-lg);
+      display: flex; flex-direction: column; overflow: hidden;
+      z-index: 9999;
+      opacity: 0; transform: translateY(16px) scale(.97);
+      pointer-events: none;
+      transition: opacity 220ms ease, transform 220ms ease;
+    }
+    #tw-window.open {
+      opacity: 1; transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    #tw-header {
+      padding: 16px 20px; background: var(--c-surface-2);
+      border-bottom: 1px solid var(--c-border);
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+    }
+    #tw-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--c-accent-soft); border: 1.5px solid var(--c-accent);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    #tw-avatar svg { color: var(--c-accent); }
+    #tw-header-info { flex: 1; min-width: 0; }
+    #tw-agent-name { font-size: 14px; font-weight: 600; color: var(--c-text); }
+    #tw-status { font-size: 11px; color: var(--c-text-muted); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+    #tw-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-success); animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    #tw-close {
+      background: none; border: none; cursor: pointer;
+      color: var(--c-text-muted); padding: 4px; border-radius: 6px;
+      display: flex; transition: color 180ms;
+    }
+    #tw-close:hover { color: var(--c-text); }
+
+    #tw-messages {
+      flex: 1; overflow-y: auto; padding: 20px 16px;
+      display: flex; flex-direction: column; gap: 12px;
+      scroll-behavior: smooth;
+    }
+    #tw-messages::-webkit-scrollbar { width: 4px; }
+    #tw-messages::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 4px; }
+
+    .tw-msg { display: flex; flex-direction: column; max-width: 88%; gap: 4px; animation: msgIn 200ms ease both; }
+    @keyframes msgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .tw-msg.user  { align-self: flex-end; align-items: flex-end; }
+    .tw-msg.agent { align-self: flex-start; align-items: flex-start; }
+
+    .tw-bubble {
+      padding: 10px 14px; border-radius: 18px;
+      font-size: 13.5px; line-height: 1.55; color: var(--c-text);
+      word-break: break-word; white-space: pre-wrap;
+    }
+    .tw-msg.user  .tw-bubble { background: var(--c-user-bubble); border-bottom-right-radius: 4px; }
+    .tw-msg.agent .tw-bubble { background: var(--c-surface-2); border: 1px solid var(--c-border); border-bottom-left-radius: 4px; }
+    .tw-time { font-size: 10px; color: var(--c-text-faint); font-family: monospace; }
+
+    .tw-typing {
+      display: flex; align-items: center; gap: 5px;
+      padding: 12px 14px; background: var(--c-surface-2);
+      border: 1px solid var(--c-border); border-radius: 18px;
+      border-bottom-left-radius: 4px; align-self: flex-start;
+    }
+    .tw-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--c-text-muted); animation: typing 1.4s ease-in-out infinite;
+    }
+    .tw-dot:nth-child(2){animation-delay:.2s}
+    .tw-dot:nth-child(3){animation-delay:.4s}
+    @keyframes typing { 0%,80%,100%{transform:scale(.8);opacity:.4} 40%{transform:scale(1.1);opacity:1} }
+
+    .tw-system {
+      align-self: center; font-size: 11px; color: var(--c-text-faint);
+      text-align: center; padding: 4px 12px;
+      background: var(--c-surface-2); border-radius: 20px;
+      border: 1px solid var(--c-border);
+    }
+    .tw-system.error { color: var(--c-error); border-color: rgba(231,76,60,.3); }
+
+    #tw-input-area {
+      padding: 12px 16px 16px; background: var(--c-surface);
+      border-top: 1px solid var(--c-border);
+      display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0;
+    }
+    #tw-input {
+      flex: 1; background: var(--c-surface-2);
+      border: 1px solid var(--c-border); border-radius: 12px;
+      padding: 10px 14px; color: var(--c-text);
+      font-family: inherit; font-size: 13.5px; line-height: 1.4;
+      resize: none; outline: none; min-height: 42px; max-height: 120px;
+      transition: border-color 180ms;
+    }
+    #tw-input::placeholder { color: var(--c-text-faint); }
+    #tw-input:focus { border-color: var(--c-accent); }
+
+    #tw-send {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: var(--c-accent); border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; color: #fff;
+      transition: background 180ms, transform 180ms, opacity 180ms;
+    }
+    #tw-send:hover:not(:disabled) { background: #3d5de8; transform: scale(1.04); }
+    #tw-send:disabled { opacity: .4; cursor: not-allowed; }
+
+    #tw-footer {
+      text-align: center; font-size: 10px;
+      color: var(--c-text-faint); padding: 6px 0 10px;
+    }
+    #tw-footer a { color: var(--c-text-faint); text-decoration: none; }
+    #tw-footer a:hover { color: var(--c-accent); }
+
+    @media (max-width: 440px) {
+      #tw-window { right:0;left:0;bottom:0;width:100%;max-height:92dvh;border-radius:24px 24px 0 0; }
+    }
+  </style>
+</head>
+<body>
+
+<button id="tw-launcher" aria-label="Ouvrir le chat">
+  <span id="tw-badge" role="status"></span>
+  <svg class="icon-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <svg class="icon-close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+</button>
+
+<div id="tw-window" role="dialog" aria-modal="true" aria-label="Chat support" aria-hidden="true">
+  <div id="tw-header">
+    <div id="tw-avatar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/>
+        <path d="M2 20c0-4 4-7 10-7s10 3 10 7"/>
+      </svg>
+    </div>
+    <div id="tw-header-info">
+      <div id="tw-agent-name">Support</div>
+      <div id="tw-status">
+        <span id="tw-status-dot"></span>
+        <span id="tw-status-label">Initialisation...</span>
+      </div>
+    </div>
+    <button id="tw-close" aria-label="Fermer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="tw-messages" role="log" aria-live="polite"></div>
+
+  <div id="tw-input-area">
+    <textarea id="tw-input" placeholder="Initialisation..." rows="1" disabled maxlength="4000"></textarea>
+    <button id="tw-send" disabled aria-label="Envoyer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="tw-footer">Propulsé par <a href="https://teamovia.com" target="_blank">Teamovia</a></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e';
+  var API_URL         = 'http://127.0.0.1:8000/v1';
+  var AGENT_NAME      = 'Support Menuiserie Dubois';
+
+  var state = { sessionId: null, isOpen: false, isLoading: false };
+
+  var launcher    = document.getElementById('tw-launcher');
+  var badge       = document.getElementById('tw-badge');
+  var chatWin     = document.getElementById('tw-window');
+  var messages    = document.getElementById('tw-messages');
+  var input       = document.getElementById('tw-input');
+  var sendBtn     = document.getElementById('tw-send');
+  var closeBtn    = document.getElementById('tw-close');
+  var agentName   = document.getElementById('tw-agent-name');
+  var statusLabel = document.getElementById('tw-status-label');
+
+  agentName.textContent = AGENT_NAME;
+
+  function toggle() {
+    state.isOpen = !state.isOpen;
+    launcher.classList.toggle('open', state.isOpen);
+    chatWin.classList.toggle('open', state.isOpen);
+    launcher.setAttribute('aria-expanded', String(state.isOpen));
+    chatWin.setAttribute('aria-hidden', String(!state.isOpen));
+    if (state.isOpen) {
+      badge.classList.remove('visible');
+      badge.textContent = '';
+      if (!state.sessionId) initSession();
+      setTimeout(function() { input.focus(); }, 240);
+    }
+  }
+
+  launcher.addEventListener('click', toggle);
+  closeBtn.addEventListener('click', toggle);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && state.isOpen) toggle();
+  });
+
+  function initSession() {
+    setStatus('Connexion...', false);
+    fetch(API_URL + '/agents/support/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-workspace-token': WORKSPACE_TOKEN,
+      },
+      body: JSON.stringify({ channel: 'chat' }),
+    })
+    .then(function(res) {
+      if (!res.ok) throw new Error('Session init failed: ' + res.status);
+      return res.json();
+    })
+    .then(function(session) {
+      state.sessionId = session.id;
+      setStatus('En ligne', true);
+      appendSystem('Bonjour 👋 Comment puis-je vous aider ?');
+      enableInput();
+    })
+    .catch(function(err) {
+      setStatus('Hors ligne', false);
+      appendSystem('Impossible de démarrer la session. Réessayez.', true);
+      console.error('[Teamovia]', err);
+    });
+  }
+
+  function sendMessage() {
+    var content = input.value.trim();
+    if (!content || state.isLoading || !state.sessionId) return;
+    appendMessage('user', content);
+    input.value = '';
+    input.style.height = '';
+    updateSendState();
+    var typingEl = appendTyping();
+    state.isLoading = true;
+    sendBtn.disabled = true;
+
+    fetch(API_URL + '/agents/support/sessions/' + state.sessionId + '/message', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-workspace-token': WORKSPACE_TOKEN,
+      },
+      body: JSON.stringify({ content: content }),
+    })
+    .then(function(res) {
+      typingEl.remove();
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(data) {
+      appendMessage('agent', data.message.content);
+      if (!state.isOpen) {
+        var count = (parseInt(badge.textContent || '0') || 0) + 1;
+        badge.textContent = count > 9 ? '9+' : String(count);
+        badge.classList.add('visible');
+      }
+    })
+    .catch(function(err) {
+      if (typingEl.parentNode) typingEl.remove();
+      appendSystem("Erreur lors de l'envoi. Réessayez.", true);
+      console.error('[Teamovia]', err);
+    })
+    .finally(function() {
+      state.isLoading = false;
+      updateSendState();
+      input.focus();
+    });
+  }
+
+  input.addEventListener('input', function() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    updateSendState();
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!sendBtn.disabled) sendMessage();
+    }
+  });
+  sendBtn.addEventListener('click', sendMessage);
+
+  function updateSendState() {
+    sendBtn.disabled = !input.value.trim() || state.isLoading || !state.sessionId;
+  }
+  function enableInput() {
+    input.disabled = false;
+    input.placeholder = 'Écrivez votre message...';
+    updateSendState();
+  }
+  function appendMessage(role, content) {
+    var wrap   = document.createElement('div');
+    wrap.className = 'tw-msg ' + role;
+    var bubble = document.createElement('div');
+    bubble.className = 'tw-bubble';
+    bubble.textContent = content;
+    var time   = document.createElement('div');
+    time.className = 'tw-time';
+    time.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    wrap.appendChild(bubble);
+    wrap.appendChild(time);
+    messages.appendChild(wrap);
+    scrollToBottom();
+    return wrap;
+  }
+  function appendSystem(text, isError) {
+    var el = document.createElement('div');
+    el.className = 'tw-system' + (isError ? ' error' : '');
+    el.textContent = text;
+    messages.appendChild(el);
+    scrollToBottom();
+    return el;
+  }
+  function appendTyping() {
+    var el = document.createElement('div');
+    el.className = 'tw-typing';
+    el.innerHTML = '<div class="tw-dot"></div><div class="tw-dot"></div><div class="tw-dot"></div>';
+    messages.appendChild(el);
+    scrollToBottom();
+    return el;
+  }
+  function setStatus(label, online) {
+    statusLabel.textContent = label;
+    var dot = document.getElementById('tw-status-dot');
+    dot.style.background  = online ? 'var(--c-success)' : 'var(--c-text-faint)';
+    dot.style.animation   = online ? '' : 'none';
+  }
+  function scrollToBottom() {
+    messages.scrollTop = messages.scrollHeight;
+  }
+})();
+</script>
+</body>
+</html>
