@@ -18,7 +18,7 @@
     "baseUrl": ".",
     "paths": {
       "@teamovia/agents-sdk": ["./packages/agents-sdk/src"],
-      "@teamovia/prompts": ["./packages/prompts/src"],
+            "@teamovia/prompts": ["./packages/prompts/dist/src/index.d.ts"],
       "@teamovia/types": ["./packages/types/src"],
       "@teamovia/types/*": ["./packages/types/src/*"],
       "@/*": ["./apps/dashboard/src/*"]
