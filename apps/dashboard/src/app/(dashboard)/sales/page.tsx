@@ -167,7 +167,7 @@ function LeadDetail({
                     style={{ width: `${value}%` }}
                   />
                 </div>
-                <span className={styles.dimensionValue}>{Math.round(value)}</span>
+                <span className={styles.dimensionValue}>{Math.round(Number(value))}</span>
               </div>
             ))}
           </div>
