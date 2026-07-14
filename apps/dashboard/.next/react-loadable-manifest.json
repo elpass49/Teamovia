@@ -4,17 +4,5 @@
     "files": [
       "static/chunks/_app-pages-browser_node_modules_pnpm_next_15_5_20__opentelemetry_558148eede57b594f04c671c03ab-c25418.js"
     ]
-  },
-  "..\\..\\..\\node_modules\\.pnpm\\next@15.5.20_@opentelemetry_558148eede57b594f04c671c03ab1970\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {
-    "id": "..\\..\\..\\node_modules\\.pnpm\\next@15.5.20_@opentelemetry_558148eede57b594f04c671c03ab1970\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app",
-    "files": [
-      "static/chunks/_pages-dir-browser_node_modules_pnpm_next_15_5_20__opentelemetry_558148eede57b594f04c671c03ab-8006bb.js"
-    ]
-  },
-  "..\\..\\..\\node_modules\\.pnpm\\next@15.5.20_@opentelemetry_558148eede57b594f04c671c03ab1970\\node_modules\\next\\dist\\client\\index.js -> ../pages/_error": {
-    "id": "..\\..\\..\\node_modules\\.pnpm\\next@15.5.20_@opentelemetry_558148eede57b594f04c671c03ab1970\\node_modules\\next\\dist\\client\\index.js -> ../pages/_error",
-    "files": [
-      "static/chunks/_pages-dir-browser_node_modules_pnpm_next_15_5_20__opentelemetry_558148eede57b594f04c671c03ab-cf8efa.js"
-    ]
   }
 }

@@ -74,7 +74,7 @@ function formatTime(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
   const diff = now.getTime() - d.getTime()
-  if (diff < 60_000)   return 'À l'instant'
+  if (diff < 60_000)   return "À l'instant"
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
