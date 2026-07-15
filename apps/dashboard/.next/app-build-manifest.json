@@ -9,6 +9,17 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/kb/page.js"
+    ],
+    "/(dashboard)/sales/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/(dashboard)/sales/page.css",
+      "static/chunks/app/(dashboard)/sales/page.js"
+    ],
+    "/(dashboard)/support/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/support/page.js"
     ]
   }
 }
