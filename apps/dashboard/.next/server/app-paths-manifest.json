@@ -1,1 +1,3 @@
-{}
+{
+  "/(dashboard)/milo/page": "app/(dashboard)/milo/page.js"
+}

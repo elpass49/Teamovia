@@ -7,6 +7,7 @@ import { messageRoute as supportMessageRoute } from './agents/support/message.js
 import { salesRoute } from './agents/sales/message.js'
 import { knowledgeRoute } from './routes/knowledge.js'
 import { avaRoute } from './agents/ava/message.js'
+import { miloRoute } from './agents/milo/generate.js'
 
 
 const app = new Hono()
@@ -26,6 +27,7 @@ app.route('/v1/agents/sales',   salesRoute)
 app.route('/v1/orchestrator',   orchestratorRoute)
 app.route('/v1/knowledge', knowledgeRoute)
 app.route('/v1/agents/ava', avaRoute)
+app.route('/v1/agents/milo', miloRoute)
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
