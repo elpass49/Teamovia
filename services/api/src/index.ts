@@ -8,7 +8,7 @@ import { salesRoute } from './agents/sales/message.js'
 import { knowledgeRoute } from './routes/knowledge.js'
 import { avaRoute } from './agents/ava/message.js'
 import { miloRoute } from './agents/milo/generate.js'
-
+import { saraRoute } from './agents/sara/orchestrate.js'
 
 const app = new Hono()
 
@@ -28,6 +28,7 @@ app.route('/v1/orchestrator',   orchestratorRoute)
 app.route('/v1/knowledge', knowledgeRoute)
 app.route('/v1/agents/ava', avaRoute)
 app.route('/v1/agents/milo', miloRoute)
+app.route('/v1/agents/sara', saraRoute)
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))

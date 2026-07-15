@@ -5,10 +5,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
-    "/(dashboard)/milo/page": [
+    "/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/milo/page.js"
+      "static/chunks/app/page.js"
+    ],
+    "/(dashboard)/sara/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/sara/page.js"
     ]
   }
 }

@@ -4,5 +4,11 @@
     "files": [
       "static/chunks/_app-pages-browser_node_modules_pnpm_next_15_5_20__opentelemetry_558148eede57b594f04c671c03ab-c25418.js"
     ]
+  },
+  "app\\(dashboard)\\sara\\page.tsx -> @supabase/supabase-js": {
+    "id": "app\\(dashboard)\\sara\\page.tsx -> @supabase/supabase-js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_pnpm_supabase_supabase-js_2_110_2_node_modules_supabase_supab-92160f.js"
+    ]
   }
 }
