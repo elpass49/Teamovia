@@ -1,572 +1,226 @@
+/**
+ * /sales — Dashboard Noah, Agent Sales
+ */
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import styles from './sales.module.css'
+import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Input, Badge } from '@/components/dashboard-shell'
 
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
+const AGENT = { emoji: '📈', name: 'Noah', role: 'Agent Sales', color: '#D97706', tags: ['Pipeline', 'Relances', 'Propositions'] }
+const API_URL         = 'http://127.0.0.1:8000/v1'
+const WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e'
+
+function sb() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+}
 
 type Lead = {
-  id: string
-  email: string
-  name: string
-  company: string | null
-  phone: string | null
-  source: string
-  status: 'new' | 'qualifying' | 'qualified' | 'transferred' | 'lost'
-  score: number | null
-  score_data: Record<string, any> | null
-  data: Record<string, unknown>
-  created_at: string
-  updated_at: string
+  id: string; email: string; name: string; company: string|null
+  source: string; status: string; score: number|null; score_data: any; data: any; created_at: string
+}
+type Message = { id: string; role: string; content: string; created_at: string }
+
+const STATUS_COLOR: Record<string,string> = {
+  new:'#5A6472', qualifying:'#1E3A8A', qualified:'#16A34A', transferred:'#7C3AED', lost:'#DC2626'
+}
+const STATUS_LABEL: Record<string,string> = {
+  new:'Nouveau', qualifying:'En qualification', qualified:'Qualifié', transferred:'Transféré', lost:'Perdu'
 }
 
-type LeadMessage = {
-  id: string
-  lead_id: string
-  role: 'user' | 'assistant'
-  content: string
-  created_at: string
-}
-
-type FilterState = {
-  status: 'all' | Lead['status']
-  searchQuery: string
-  minScore: number | null
-}
-
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
-
-function getScoreBadgeColor(score: number | null): string {
-  if (score === null) return 'gray'
-  if (score >= 75) return 'green'
-  if (score >= 50) return 'orange'
-  return 'red'
-}
-
-function getScoreBadgeLabel(score: number | null): string {
-  if (score === null) return 'N/A'
-  return `${Math.round(score)}`
-}
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('fr-FR', {
-    month: 'short',
-    day: 'numeric',
-    year: '2-digit',
-  })
-}
-
-// ─────────────────────────────────────────────────────────────
-// Lead List Item
-// ─────────────────────────────────────────────────────────────
-
-function LeadItem({
-  lead,
-  isActive,
-  onClick,
-}: {
-  lead: Lead
-  isActive: boolean
-  onClick: () => void
-}) {
+function ScoreBadge({ score }: { score: number|null }) {
+  if (score === null) return <span style={{fontSize:'12px',color:T.textSecond}}>N/A</span>
+  const color = score >= 70 ? '#16A34A' : score >= 50 ? '#D97706' : '#DC2626'
   return (
-    <button
-      className={`${styles.leadItem} ${isActive ? styles.active : ''}`}
-      onClick={onClick}
-    >
-      <div className={styles.leadItemHeader}>
-        <div className={styles.leadItemName}>{lead.name || 'Sans nom'}</div>
-        <div className={`${styles.scoreBadge} ${styles[`badge_${getScoreBadgeColor(lead.score)}`]}`}>
-          {getScoreBadgeLabel(lead.score)}
-        </div>
-      </div>
-      <div className={styles.leadItemEmail}>{lead.email}</div>
-      <div className={styles.leadItemMeta}>
-        <span className={styles.leadItemSource}>{lead.source}</span>
-        <span className={styles.leadItemStatus}>{lead.status}</span>
-      </div>
-    </button>
+    <span style={{
+      fontSize:'13px',fontWeight:700,color,
+      background:`${color}12`,padding:'2px 8px',borderRadius:'6px',
+    }}>{score}</span>
   )
 }
-
-// ─────────────────────────────────────────────────────────────
-// Lead Detail
-// ─────────────────────────────────────────────────────────────
-
-function LeadDetail({
-  lead,
-  messages,
-  onQualify,
-  onReject,
-  onSyncCRM,
-  onQualifyAI,
-  isLoading,
-}: {
-  lead: Lead
-  messages: LeadMessage[]
-  onQualify: () => void
-  onReject: () => void
-  onSyncCRM: () => void
-  onQualifyAI: () => void
-  isLoading: boolean
-}) {
-  return (
-    <div className={styles.detailPanel}>
-      {/* Header */}
-      <div className={styles.detailHeader}>
-        <div>
-          <h2 className={styles.detailName}>{lead.name || 'Sans nom'}</h2>
-          <div className={styles.detailEmail}>{lead.email}</div>
-        </div>
-        <div className={`${styles.scoreBadgeLarge} ${styles[`badge_${getScoreBadgeColor(lead.score)}`]}`}>
-          {getScoreBadgeLabel(lead.score)}
-        </div>
-      </div>
-
-      {/* Meta */}
-      <div className={styles.detailMeta}>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Entreprise</span>
-          <span className={styles.metaValue}>{lead.company || '—'}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Téléphone</span>
-          <span className={styles.metaValue}>{lead.phone || '—'}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Source</span>
-          <span className={styles.metaValue}>{lead.source}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Statut</span>
-          <span className={styles.metaValue}>{lead.status}</span>
-        </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Créé</span>
-          <span className={styles.metaValue}>{formatDate(lead.created_at)}</span>
-        </div>
-      </div>
-
-      {/* Dimensions (si score disponible) */}
-      {lead.score_data?.dimensions && (
-        <div className={styles.dimensions}>
-          <h3 className={styles.dimensionsTitle}>Dimensions</h3>
-          <div className={styles.dimensionsList}>
-            {Object.entries(lead.score_data.dimensions).map(([key, value]) => (
-              <div key={key} className={styles.dimensionItem}>
-                <span className={styles.dimensionLabel}>{key}</span>
-                <div className={styles.dimensionBar}>
-                  <div
-                    className={styles.dimensionFill}
-                    style={{ width: `${value}%` }}
-                  />
-                </div>
-                <span className={styles.dimensionValue}>{Math.round(Number(value))}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Messages */}
-      {messages.length > 0 && (
-        <div className={styles.messagesSection}>
-          <h3 className={styles.messagesTitle}>Historique qualification</h3>
-          <div className={styles.messagesList}>
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`${styles.message} ${styles[`message_${msg.role}`]}`}
-              >
-                <div className={styles.messageRole}>
-                  {msg.role === 'user' ? '👤' : '🤖'}
-                </div>
-                <div className={styles.messageContent}>{msg.content}</div>
-                <div className={styles.messageTime}>
-                  {formatDate(msg.created_at)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Score Data */}
-      {lead.score_data && (
-        <div className={styles.scoreDataSection}>
-          {lead.score_data.reasons && lead.score_data.reasons.length > 0 && (
-            <div className={styles.scoreDataBlock}>
-              <h4 className={styles.scoreDataTitle}>Raisons du score</h4>
-              <ul className={styles.scoreDataList}>
-                {lead.score_data.reasons.map((reason: string, i: number) => (
-                  <li key={i}>✓ {reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {lead.score_data.disqualifiers &&
-            lead.score_data.disqualifiers.length > 0 && (
-              <div className={styles.scoreDataBlock}>
-                <h4 className={styles.scoreDataTitle}>Obstacles potentiels</h4>
-                <ul className={styles.scoreDataList}>
-                  {lead.score_data.disqualifiers.map(
-                    (disq: string, i: number) => (
-                      <li key={i}>⚠️ {disq}</li>
-                    )
-                  )}
-                </ul>
-              </div>
-            )}
-
-          {lead.score_data.next_step && (
-            <div className={styles.scoreDataBlock}>
-              <h4 className={styles.scoreDataTitle}>Prochaine étape</h4>
-              <p className={styles.nextStep}>{lead.score_data.next_step}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className={styles.actions}>
-        <button
-          className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-          onClick={onQualify}
-          disabled={isLoading}
-        >
-          Qualifier
-        </button>
-        <button
-          className={`${styles.actionBtn} ${styles.actionBtnSecondary}`}
-          onClick={onReject}
-          disabled={isLoading}
-        >
-          Rejeter
-        </button>
-        <button
-          className={`${styles.actionBtn} ${styles.actionBtnSecondary}`}
-          onClick={onQualifyAI}
-          disabled={isLoading}
-        >
-          Qualifier (IA)
-        </button>
-        <button
-          className={`${styles.actionBtn} ${styles.actionBtnSecondary}`}
-          onClick={onSyncCRM}
-          disabled={isLoading}
-        >
-          Sync CRM
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// Main Page
-// ─────────────────────────────────────────────────────────────
 
 export default function SalesPage() {
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [messages, setMessages] = useState<LeadMessage[]>([])
-  const [filters, setFilters] = useState<FilterState>({
-    status: 'all',
-    searchQuery: '',
-    minScore: null,
-  })
-  const [isLoading, setIsLoading] = useState(false)
+  const [leads,    setLeads]    = useState<Lead[]>([])
+  const [active,   setActive]   = useState<Lead|null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [filter,   setFilter]   = useState('all')
+  const [search,   setSearch]   = useState('')
+  const [loading,  setLoading]  = useState(true)
+  const [updating, setUpdating] = useState(false)
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const load = useCallback(async () => {
+    setLoading(true)
+    let q = sb().from('leads').select('*').order('created_at',{ascending:false})
+    if (filter!=='all') q = q.eq('status',filter)
+    const { data } = await q
+    setLeads((data??[]) as Lead[])
+    setLoading(false)
+  }, [filter])
 
-  // ── Récupérer les leads ──────────────────────────────────
-  const fetchLeads = useCallback(async () => {
-    try {
-      const query = supabase
-        .from('leads')
-        .select('*')
-        .order('score', { ascending: false, nullsFirst: false })
+  useEffect(() => { load() }, [load])
 
-      if (filters.status !== 'all') {
-        query.eq('status', filters.status)
-      }
-
-      if (filters.searchQuery) {
-        query.or(
-          `email.ilike.%${filters.searchQuery}%,name.ilike.%${filters.searchQuery}%`
-        )
-      }
-
-      if (filters.minScore !== null) {
-        query.gte('score', filters.minScore)
-      }
-
-      const { data, error } = await query
-
-      if (!error && data) {
-        setLeads(data as Lead[])
-      }
-    } catch (err) {
-      console.error('Erreur récupération leads:', err)
-    }
-  }, [supabase, filters])
-
-  // ── Récupérer les messages d'un lead ─────────────────────
-  const fetchMessages = useCallback(
-    async (leadId: string) => {
-      try {
-        const { data, error } = await supabase
-          .from('lead_messages')
-          .select('*')
-          .eq('lead_id', leadId)
-          .order('created_at', { ascending: true })
-
-        if (!error && data) {
-          setMessages(data as LeadMessage[])
-        }
-      } catch (err) {
-        console.error('Erreur récupération messages:', err)
-      }
-    },
-    [supabase]
-  )
-
-  // ── Setup realtime ───────────────────────────────────────
   useEffect(() => {
-    fetchLeads()
+    if (!active) { setMessages([]); return }
+    sb().from('lead_messages').select('*').eq('lead_id',active.id).order('created_at',{ascending:true})
+      .then(({data}) => setMessages((data??[]) as Message[]))
+  }, [active])
 
-    const subscription = supabase
-      .channel('leads')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leads' },
-        () => {
-          fetchLeads()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
+  async function updateStatus(status: string) {
+    if (!active||updating) return
+    setUpdating(true)
+    const res = await fetch(`${API_URL}/agents/sales/leads/${active.id}`,{
+      method:'PATCH',headers:{'Content-Type':'application/json','x-workspace-token':WORKSPACE_TOKEN},
+      body:JSON.stringify({status}),
+    })
+    if (res.ok) {
+      setLeads(prev => prev.map(l => l.id===active.id ? {...l,status} : l))
+      setActive(prev => prev ? {...prev,status} : null)
     }
-  }, [fetchLeads, supabase])
-
-  // ── Sélection lead ───────────────────────────────────────
-  const handleSelectLead = useCallback(
-    (lead: Lead) => {
-      setSelectedLead(lead)
-      fetchMessages(lead.id)
-    },
-    [fetchMessages]
-  )
-
-  // ── Actions ──────────────────────────────────────────────
-  const handleQualify = async () => {
-    if (!selectedLead) return
-    setIsLoading(true)
-    try {
-      const res = await fetch(
-        `/api/agents/sales/leads/${selectedLead.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'qualified' }),
-        }
-      )
-      if (res.ok) {
-        const updated = await res.json()
-        setSelectedLead(updated)
-        fetchLeads()
-      }
-    } catch (err) {
-      console.error('Erreur qualification:', err)
-    } finally {
-      setIsLoading(false)
-    }
+    setUpdating(false)
   }
 
-  const handleReject = async () => {
-    if (!selectedLead) return
-    setIsLoading(true)
-    try {
-      const res = await fetch(
-        `/api/agents/sales/leads/${selectedLead.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'lost' }),
-        }
-      )
-      if (res.ok) {
-        const updated = await res.json()
-        setSelectedLead(updated)
-        fetchLeads()
-      }
-    } catch (err) {
-      console.error('Erreur rejet:', err)
-    } finally {
-      setIsLoading(false)
-    }
+  async function qualifyAI() {
+    if (!active||updating) return
+    setUpdating(true)
+    await fetch(`${API_URL}/agents/sales/leads/${active.id}/qualify`,{
+      method:'POST',headers:{'Content-Type':'application/json','x-workspace-token':WORKSPACE_TOKEN},
+    })
+    await load()
+    setUpdating(false)
   }
 
-  const handleQualifyAI = async () => {
-    if (!selectedLead) return
-    setIsLoading(true)
-    try {
-      const res = await fetch(
-        `/api/agents/sales/leads/${selectedLead.id}/qualify`,
-        { method: 'POST' }
-      )
-      if (res.ok) {
-        fetchLeads()
-        handleSelectLead(selectedLead)
-      }
-    } catch (err) {
-      console.error('Erreur qualification IA:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleSyncCRM = async () => {
-    if (!selectedLead) return
-    setIsLoading(true)
-    try {
-      await fetch(
-        `/api/agents/sales/leads/${selectedLead.id}/sync-crm`,
-        { method: 'POST' }
-      )
-    } catch (err) {
-      console.error('Erreur sync CRM:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // ── Filtre leads ─────────────────────────────────────────
-  const filteredLeads = leads.filter((lead) => {
-    if (filters.status !== 'all' && lead.status !== filters.status) {
-      return false
-    }
-    if (
-      filters.searchQuery &&
-      !lead.email.includes(filters.searchQuery) &&
-      !lead.name.includes(filters.searchQuery)
-    ) {
-      return false
-    }
-    if (
-      filters.minScore !== null &&
-      (lead.score === null || lead.score < filters.minScore)
-    ) {
-      return false
-    }
-    return true
-  })
+  const displayed = leads.filter(l => !search || `${l.name} ${l.email}`.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Pipeline Ventes</h1>
-      </div>
+    <DashboardShell>
+<AgentHeader {...AGENT} stat={leads?.filter(l=>l.status==='qualified').length ?? 0} statLabel="actives" />
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
 
-      <div className={styles.container}>
-        {/* Colonne gauche : liste leads */}
-        <div className={styles.listPanel}>
-          <div className={styles.filters}>
-            <input
-              type="text"
-              className={styles.searchInput}
-              placeholder="Rechercher..."
-              value={filters.searchQuery}
-              onChange={(e) =>
-                setFilters({ ...filters, searchQuery: e.target.value })
-              }
-            />
-
-            <div className={styles.filterGroup}>
-              <label className={styles.filterLabel}>Statut</label>
-              <select
-                className={styles.filterSelect}
-                value={filters.status}
-                onChange={(e) =>
-                  setFilters({
-                    ...filters,
-                    status: e.target.value as FilterState['status'],
-                  })
-                }
-              >
-                <option value="all">Tous</option>
-                <option value="new">Nouveau</option>
-                <option value="qualifying">Qualification</option>
-                <option value="qualified">Qualifié</option>
-                <option value="transferred">Transféré</option>
-                <option value="lost">Perdu</option>
-              </select>
-            </div>
-
-            <div className={styles.filterGroup}>
-              <label className={styles.filterLabel}>Score min</label>
-              <input
-                type="number"
-                className={styles.filterInput}
-                placeholder="0-100"
-                min="0"
-                max="100"
-                value={filters.minScore ?? ''}
-                onChange={(e) =>
-                  setFilters({
-                    ...filters,
-                    minScore: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
-              />
-            </div>
+        {/* Liste leads */}
+        <div style={{width:'276px',flexShrink:0,borderRight:`1px solid ${T.border}`,display:'flex',flexDirection:'column',background:T.bg}}>
+          <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.border}`,display:'flex',flexDirection:'column',gap:'8px'}}>
+            <Input value={search} onChange={setSearch} placeholder="Rechercher..." />
+            <select value={filter} onChange={e=>setFilter(e.target.value)} style={{
+              background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radiusSm,
+              padding:'7px 10px',fontSize:'12px',color:T.textPrimary,outline:'none',
+            }}>
+              <option value="all">Tous les statuts</option>
+              {Object.entries(STATUS_LABEL).map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
           </div>
+          <div style={{flex:1,overflowY:'auto'}}>
+            {loading ? <div style={{padding:'24px',textAlign:'center',color:T.textSecond,fontSize:'13px'}}>Chargement...</div>
+              : displayed.length===0 ? <EmptyState icon="📈" title="Aucun lead" />
+              : displayed.map(l => (
+                <button key={l.id} onClick={() => setActive(l)} style={{
+                  width:'100%',textAlign:'left',padding:'11px 14px',
+                  background: active?.id===l.id ? `${AGENT.color}08` : 'transparent',
+                  borderLeft: active?.id===l.id ? `3px solid ${AGENT.color}` : '3px solid transparent',
+                  border:'none',borderBottom:`1px solid ${T.border}`,cursor:'pointer',transition:'200ms',
+                }}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:'13px',fontWeight:600,color:T.textPrimary}}>{l.name}</span>
+                    <ScoreBadge score={l.score} />
+                  </div>
+                  <div style={{fontSize:'11px',color:T.textSecond,marginTop:'2px'}}>{l.email}</div>
+                  <div style={{marginTop:'4px',display:'flex',gap:'4px'}}>
+                    <Badge label={STATUS_LABEL[l.status]??l.status} color={STATUS_COLOR[l.status]} />
+                    <Badge label={l.source} />
+                  </div>
+                </button>
+              ))}
+          </div>
+        </div>
 
-          <div className={styles.leadsList}>
-            {filteredLeads.length === 0 ? (
-              <div className={styles.emptyState}>Aucun lead</div>
-            ) : (
-              filteredLeads.map((lead) => (
-                <LeadItem
-                  key={lead.id}
-                  lead={lead}
-                  isActive={selectedLead?.id === lead.id}
-                  onClick={() => handleSelectLead(lead)}
-                />
-              ))
+        {/* Fiche lead */}
+        {active ? (
+          <div style={{flex:1,overflowY:'auto',background:T.bg,padding:'20px 24px'}}>
+            {/* Header lead */}
+            <Card padding="16px 20px" style={{marginBottom:'16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                <div>
+                  <div style={{fontSize:'18px',fontWeight:700,fontFamily:T.fontHead,color:T.textPrimary}}>{active.name}</div>
+                  <div style={{fontSize:'13px',color:T.textSecond,marginTop:'2px'}}>{active.email}</div>
+                  {active.company && <div style={{fontSize:'12px',color:T.textSecond}}>{active.company}</div>}
+                  <div style={{display:'flex',gap:'6px',marginTop:'8px',flexWrap:'wrap'}}>
+                    <Badge label={STATUS_LABEL[active.status]??active.status} color={STATUS_COLOR[active.status]} />
+                    <Badge label={active.source} />
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <ScoreBadge score={active.score} />
+                  <div style={{fontSize:'10px',color:T.textSecond,marginTop:'4px'}}>Score</div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:'8px',marginTop:'14px',flexWrap:'wrap'}}>
+                <Btn variant="primary" size="sm" onClick={() => updateStatus('qualified')} loading={updating}>✓ Qualifier</Btn>
+                <Btn variant="danger"  size="sm" onClick={() => updateStatus('lost')} loading={updating}>✗ Rejeter</Btn>
+                <Btn variant="accent"  size="sm" onClick={qualifyAI} loading={updating}>🤖 IA</Btn>
+                <Btn variant="ghost"   size="sm">🔗 Sync CRM</Btn>
+              </div>
+            </Card>
+
+            {/* Données projet */}
+            {active.data && Object.keys(active.data).length > 0 && (
+              <Card padding="16px 20px" style={{marginBottom:'16px'}}>
+                <div style={{fontSize:'12px',fontWeight:600,color:T.textSecond,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'10px'}}>Données projet</div>
+                {Object.entries(active.data).map(([k,v]) => (
+                  <div key={k} style={{display:'flex',gap:'8px',fontSize:'13px',marginBottom:'5px'}}>
+                    <span style={{color:T.textSecond,minWidth:'120px'}}>{k}</span>
+                    <span style={{color:T.textPrimary,fontWeight:500}}>{String(v)}</span>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* Score data */}
+            {active.score_data?.reasons && (
+              <Card padding="16px 20px" style={{marginBottom:'16px'}}>
+                <div style={{fontSize:'12px',fontWeight:600,color:T.textSecond,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'10px'}}>Analyse IA</div>
+                {active.score_data.reasons?.map((r:string,i:number) => (
+                  <div key={i} style={{fontSize:'13px',color:T.textPrimary,marginBottom:'4px'}}>✓ {r}</div>
+                ))}
+                {active.score_data.disqualifiers?.map((d:string,i:number) => (
+                  <div key={i} style={{fontSize:'13px',color:T.danger,marginBottom:'4px'}}>✗ {d}</div>
+                ))}
+              </Card>
+            )}
+
+            {/* Historique messages */}
+            {messages.length > 0 && (
+              <Card padding="16px 20px">
+                <div style={{fontSize:'12px',fontWeight:600,color:T.textSecond,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'12px'}}>Historique qualification</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                  {messages.map(m => {
+                    const isAgent = m.role==='assistant'
+                    return (
+                      <div key={m.id} style={{display:'flex',gap:'10px',alignItems:'flex-start'}}>
+                        <div style={{
+                          width:24,height:24,borderRadius:'50%',flexShrink:0,
+                          background: isAgent ? AGENT.color : T.surfaceAlt,
+                          display:'flex',alignItems:'center',justifyContent:'center',
+                          fontSize:'11px',color: isAgent ? '#fff' : T.textSecond,fontWeight:600,
+                          marginTop:'2px',
+                        }}>{isAgent?'N':'U'}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:'13px',color:T.textPrimary,lineHeight:'1.5'}}>{m.content}</div>
+                          <div style={{fontSize:'10px',color:T.textSecond,marginTop:'3px',fontFamily:'monospace'}}>
+                            {new Date(m.created_at).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
             )}
           </div>
-        </div>
-
-        {/* Colonne droite : détail lead */}
-        <div className={styles.detailPanelContainer}>
-          {selectedLead ? (
-            <LeadDetail
-              lead={selectedLead}
-              messages={messages}
-              onQualify={handleQualify}
-              onReject={handleReject}
-              onQualifyAI={handleQualifyAI}
-              onSyncCRM={handleSyncCRM}
-              isLoading={isLoading}
-            />
-          ) : (
-            <div className={styles.emptyDetail}>Sélectionner un lead</div>
-          )}
-        </div>
+        ) : (
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',background:T.bg}}>
+            <EmptyState icon="📈" title="Sélectionner un lead" subtitle="Cliquez sur un lead pour voir sa fiche." />
+          </div>
+        )}
       </div>
-    </div>
+    </DashboardShell>
   )
 }

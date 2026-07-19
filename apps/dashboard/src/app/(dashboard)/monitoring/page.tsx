@@ -1,488 +1,183 @@
+/**
+ * /monitoring — Dashboard Monitoring global
+ */
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
-import styles from './monitoring.module.css'
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import DashboardShell, { T, AgentHeader, Card, Badge } from '@/components/dashboard-shell'
 
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
+const AGENT = { emoji: '📊', name: 'Monitoring', role: 'Supervision globale', color: '#5A6472', tags: ['Sessions', 'Leads', 'Latence', 'Tokens'] }
 
-type Period = 'day' | 'week' | 'month'
-
-type WorkspaceMetrics = {
-  period: string
-  sessions_total: number
-  sessions_resolved: number
-  sessions_escalated: number
-  leads_total: number
-  leads_qualified: number
-  avg_score: number
-  avg_latency_ms: number
-  tokens_used_total: number
-  handoffs_total: number
+function sb() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 }
 
-type AgentLog = {
-  id: string
-  agent_id: string | null
-  session_id: string | null
-  event_type: string
-  payload: Record<string, unknown>
-  latency_ms: number | null
-  tokens_used: number | null
-  created_at: string
-}
+type Log = { id:string; event_type:string; payload:any; latency_ms:number|null; tokens_used:number|null; model_used:string|null; created_at:string }
+type Period = '24h'|'7j'|'30j'
 
-type ChartDataPoint = {
-  name: string
-  [key: string]: string | number
-}
+const PERIOD_HOURS: Record<Period,number> = { '24h':24, '7j':168, '30j':720 }
+const PIE_COLORS = ['#1E3A8A','#D97706','#0891B2','#16A34A','#7C3AED','#DC2626']
 
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
-
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('fr-FR', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function getEventTypeColor(eventType: string): string {
-  const colors: Record<string, string> = {
-    message_in: '#4f6ef7',
-    message_out: '#3fb950',
-    tool_call: '#d29922',
-    handoff: '#f85149',
-    escalation: '#f85149',
-    crm_sync: '#1f6feb',
-    error: '#f85149',
-  }
-  return colors[eventType] || '#8b949e'
-}
-
-// ─────────────────────────────────────────────────────────────
-// Metric Card
-// ─────────────────────────────────────────────────────────────
-
-function MetricCard({
-  title,
-  value,
-  unit = '',
-  subtext = '',
-}: {
-  title: string
-  value: number | string
-  unit?: string
-  subtext?: string
-}) {
+function StatCard({ label, value, sub, color }: { label:string; value:string|number; sub?:string; color?:string }) {
   return (
-    <div className={styles.metricCard}>
-      <div className={styles.metricTitle}>{title}</div>
-      <div className={styles.metricValue}>
-        {value}
-        {unit && <span className={styles.metricUnit}>{unit}</span>}
-      </div>
-      {subtext && <div className={styles.metricSubtext}>{subtext}</div>}
-    </div>
+    <Card padding="16px 18px">
+      <div style={{fontSize:'11px',fontWeight:600,color:T.textSecond,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'8px'}}>{label}</div>
+      <div style={{fontSize:'26px',fontWeight:700,fontFamily:T.fontHead,color:color??T.textPrimary}}>{value}</div>
+      {sub && <div style={{fontSize:'11px',color:T.textSecond,marginTop:'4px'}}>{sub}</div>}
+    </Card>
   )
 }
-
-// ─────────────────────────────────────────────────────────────
-// Main Page
-// ─────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
-  const [period, setPeriod] = useState<Period>('week')
-  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null)
-  const [logs, setLogs] = useState<AgentLog[]>([])
-  const [eventTypeFilter, setEventTypeFilter] = useState<string>('all')
-  const [sessionTrendData, setSessionTrendData] = useState<ChartDataPoint[]>([])
-  const [leadStatusData, setLeadStatusData] = useState<ChartDataPoint[]>([])
-  const [eventTypeData, setEventTypeData] = useState<ChartDataPoint[]>([])
+  const [logs,   setLogs]   = useState<Log[]>([])
+  const [period, setPeriod] = useState<Period>('24h')
+  const [loading,setLoading]= useState(true)
+  const [filter, setFilter] = useState('all')
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const load = useCallback(async () => {
+    setLoading(true)
+    const since = new Date(Date.now() - PERIOD_HOURS[period]*3600*1000).toISOString()
+    const { data } = await sb().from('agent_logs').select('*').gte('created_at',since).order('created_at',{ascending:false}).limit(200)
+    setLogs((data??[]) as Log[])
+    setLoading(false)
+  }, [period])
 
-  // ── Récupérer les métriques ──────────────────────────────
-  const fetchMetrics = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.rpc('get_workspace_metrics', {
-        p_workspace_id: null,  // courant (via RLS)
-        p_agent_id: null,
-        p_period: period,
-      })
+  useEffect(() => { load() }, [load])
 
-      if (!error && data) {
-        setMetrics(data as WorkspaceMetrics)
-      }
-    } catch (err) {
-      console.error('Erreur métriques:', err)
-    }
-  }, [supabase, period])
+  const total       = logs.length
+  const avgLatency  = logs.filter(l=>l.latency_ms).reduce((a,l)=>a+(l.latency_ms??0),0) / (logs.filter(l=>l.latency_ms).length||1)
+  const totalTokens = logs.reduce((a,l)=>a+(l.tokens_used??0),0)
+  const errors      = logs.filter(l=>l.event_type==='error').length
 
-  // ── Récupérer les logs ───────────────────────────────────
-  const fetchLogs = useCallback(async () => {
-    try {
-      let query = supabase
-        .from('agent_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100)
+  const timeGroups: Record<string,number> = {}
+  logs.forEach(l => {
+    const d   = new Date(l.created_at)
+    const key = period==='24h' ? `${d.getHours()}h` : d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})
+    timeGroups[key] = (timeGroups[key]??0)+1
+  })
+  const timeData = Object.entries(timeGroups).map(([name,count])=>({name,count})).slice(-12)
 
-      if (eventTypeFilter !== 'all') {
-        query = query.eq('event_type', eventTypeFilter)
-      }
-
-      const { data, error } = await query
-
-      if (!error && data) {
-        setLogs(data as AgentLog[])
-
-        // Compter les événements par type pour le PieChart
-        const eventCounts: Record<string, number> = {}
-        data.forEach(log => {
-          eventCounts[log.event_type] = (eventCounts[log.event_type] || 0) + 1
-        })
-
-        const pieData = Object.entries(eventCounts).map(([name, value]) => ({
-          name,
-          value,
-        }))
-
-        setEventTypeData(pieData)
-      }
-    } catch (err) {
-      console.error('Erreur logs:', err)
-    }
-  }, [supabase, eventTypeFilter])
-
-  // ── Générer données de tendance (simulation 7j) ──────────
-  const generateTrendData = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('sessions')
-        .select('created_at')
-        .order('created_at', { ascending: true })
-
-      if (!error && data) {
-        const trendMap: Record<string, number> = {}
-
-        // Grouper par jour
-        data.forEach(session => {
-          const date = new Date(session.created_at as string)
-          const dayKey = date.toLocaleDateString('fr-FR', {
-            month: 'short',
-            day: 'numeric',
-          })
-          trendMap[dayKey] = (trendMap[dayKey] || 0) + 1
-        })
-
-        const trendArray = Object.entries(trendMap).map(([name, count]) => ({
-          name,
-          sessions: count,
-        }))
-
-        setSessionTrendData(trendArray.slice(-7))  // 7 derniers jours
-      }
-    } catch (err) {
-      console.error('Erreur tendance:', err)
-    }
-  }, [supabase])
-
-  // ── Générer données leads par statut ─────────────────────
-  const generateLeadStatusData = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('status')
-
-      if (!error && data) {
-        const statusCounts: Record<string, number> = {
-          new: 0,
-          qualifying: 0,
-          qualified: 0,
-          transferred: 0,
-          lost: 0,
-        }
-
-        data.forEach(lead => {
-          if (lead.status in statusCounts) {
-            statusCounts[lead.status] = (statusCounts[lead.status] || 0) + 1
-          }
-        })
-
-        const statusData = Object.entries(statusCounts).map(([name, count]) => ({
-          name,
-          count,
-        }))
-
-        setLeadStatusData(statusData)
-      }
-    } catch (err) {
-      console.error('Erreur statut leads:', err)
-    }
-  }, [supabase])
-
-  // ── Charger données au montage ──────────────────────────
-  useEffect(() => {
-    fetchMetrics()
-    fetchLogs()
-    generateTrendData()
-    generateLeadStatusData()
-  }, [fetchMetrics, fetchLogs, generateTrendData, generateLeadStatusData])
-
-  // ── Setup realtime agent_logs ──────────────────────────
-  useEffect(() => {
-    const subscription = supabase
-      .channel('agent_logs')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'agent_logs' },
-        () => {
-          fetchLogs()
-          fetchMetrics()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [fetchLogs, fetchMetrics, supabase])
-
-  // ── Récupérer list des event_types pour filtre ──────────
-  const eventTypes = Array.from(new Set(logs.map(l => l.event_type))).sort()
+  const eventGroups: Record<string,number> = {}
+  logs.forEach(l => { eventGroups[l.event_type]=(eventGroups[l.event_type]??0)+1 })
+  const eventData = Object.entries(eventGroups).map(([name,value])=>({name,value}))
+  const eventTypes = [...new Set(logs.map(l=>l.event_type))]
+  const displayed  = logs.filter(l => filter==='all'||l.event_type===filter)
 
   return (
-    <div className={styles.page}>
-      {/* Header */}
-      <div className={styles.header}>
-        <h1 className={styles.title}>Monitoring</h1>
-        <div className={styles.periodSelector}>
-          <label className={styles.periodLabel}>Période :</label>
-          <select
-            className={styles.periodSelect}
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as Period)}
-          >
-            <option value="day">Jour</option>
-            <option value="week">Semaine</option>
-            <option value="month">Mois</option>
-          </select>
+    <DashboardShell>
+      <AgentHeader {...AGENT} stat={total} statLabel={`événements (${period})`} action={
+        <div style={{display:'flex',gap:'4px'}}>
+          {(['24h','7j','30j'] as Period[]).map(p => (
+            <button key={p} onClick={()=>setPeriod(p)} style={{
+              padding:'5px 12px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',
+              fontSize:'12px',fontWeight:600,transition:'200ms',
+              background: period===p ? AGENT.color : T.surfaceAlt,
+              color: period===p ? '#fff' : T.textSecond,
+            }}>{p}</button>
+          ))}
         </div>
-      </div>
+      } />
 
-      {/* Metric Cards */}
-      <div className={styles.metricsRow}>
-        <MetricCard
-          title="Sessions totales"
-          value={metrics?.sessions_total ?? 0}
-        />
-        <MetricCard
-          title="Sessions résolues"
-          value={metrics?.sessions_resolved ?? 0}
-        />
-        <MetricCard
-          title="Escalades"
-          value={metrics?.sessions_escalated ?? 0}
-        />
-        <MetricCard
-          title="Leads totaux"
-          value={metrics?.leads_total ?? 0}
-        />
-        <MetricCard
-          title="Leads qualifiés"
-          value={metrics?.leads_qualified ?? 0}
-        />
-        <MetricCard
-          title="Score moyen"
-          value={metrics?.avg_score?.toFixed(1) ?? 'N/A'}
-          unit="/100"
-        />
-        <MetricCard
-          title="Tokens utilisés"
-          value={(metrics?.tokens_used_total ?? 0).toLocaleString()}
-        />
-        <MetricCard
-          title="Latence moyenne"
-          value={metrics?.avg_latency_ms?.toFixed(0) ?? 'N/A'}
-          unit="ms"
-        />
-      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'20px 24px',background:T.bg}}>
 
-      {/* Charts */}
-      <div className={styles.chartsRow}>
-        {/* Line Chart : Sessions trend */}
-        {sessionTrendData.length > 0 && (
-          <div className={styles.chartCard}>
-            <h3 className={styles.chartTitle}>Sessions (7j)</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={sessionTrendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-                <XAxis dataKey="name" stroke="#8b949e" />
-                <YAxis stroke="#8b949e" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#161b22',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                  }}
-                  labelStyle={{ color: '#c9d1d9' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="sessions"
-                  stroke="#4f6ef7"
-                  strokeWidth={2}
-                  dot={{ fill: '#4f6ef7', r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        {/* Stats */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'20px'}}>
+          <StatCard label="Événements"      value={total}                        color={AGENT.color} />
+          <StatCard label="Latence moy."    value={`${Math.round(avgLatency)}ms`} color="#1E3A8A" />
+          <StatCard label="Tokens utilisés" value={totalTokens.toLocaleString('fr-FR')} color="#D97706" />
+          <StatCard label="Erreurs"         value={errors} sub={`${((errors/(total||1))*100).toFixed(1)}% du total`} color={errors>0?'#DC2626':'#16A34A'} />
+        </div>
 
-        {/* Bar Chart : Leads by status */}
-        {leadStatusData.length > 0 && (
-          <div className={styles.chartCard}>
-            <h3 className={styles.chartTitle}>Leads par statut</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={leadStatusData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-                <XAxis dataKey="name" stroke="#8b949e" />
-                <YAxis stroke="#8b949e" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#161b22',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                  }}
-                  labelStyle={{ color: '#c9d1d9' }}
-                />
-                <Bar dataKey="count" fill="#4f6ef7" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        {/* Graphiques */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'20px'}}>
+          <Card padding="16px 18px">
+            <div style={{fontSize:'12px',fontWeight:600,color:T.textSecond,marginBottom:'14px'}}>Activité dans le temps</div>
+            {timeData.length>0 ? (
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={timeData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                  <XAxis dataKey="name" tick={{fontSize:10,fill:T.textSecond}} />
+                  <YAxis tick={{fontSize:10,fill:T.textSecond}} />
+                  <Tooltip contentStyle={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radiusSm,fontSize:'12px'}} />
+                  <Line type="monotone" dataKey="count" stroke="#1E3A8A" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : <div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',color:T.textSecond,fontSize:'13px'}}>Aucune donnée</div>}
+          </Card>
 
-        {/* Pie Chart : Event type distribution */}
-        {eventTypeData.length > 0 && (
-          <div className={styles.chartCard}>
-            <h3 className={styles.chartTitle}>Événements par type</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={eventTypeData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name} (${value})`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {eventTypeData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={getEventTypeColor(entry.name)}
-                    />
+          <Card padding="16px 18px">
+            <div style={{fontSize:'12px',fontWeight:600,color:T.textSecond,marginBottom:'14px'}}>Répartition par type</div>
+            {eventData.length>0 ? (
+              <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
+                <ResponsiveContainer width={140} height={140}>
+                  <PieChart>
+                    <Pie data={eventData} cx={65} cy={65} innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
+                      {eventData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radiusSm,fontSize:'12px'}} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{display:'flex',flexDirection:'column',gap:'5px'}}>
+                  {eventData.map((e,i) => (
+                    <div key={e.name} style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px'}}>
+                      <span style={{width:8,height:8,borderRadius:'50%',background:PIE_COLORS[i%PIE_COLORS.length],flexShrink:0}} />
+                      <span style={{color:T.textSecond}}>{e.name}</span>
+                      <span style={{fontWeight:600,color:T.textPrimary,marginLeft:'auto'}}>{e.value}</span>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#161b22',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                  }}
-                  labelStyle={{ color: '#c9d1d9' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* Recent Logs Table */}
-      <div className={styles.logsSection}>
-        <div className={styles.logsHeader}>
-          <h3 className={styles.logsTitle}>Logs récents</h3>
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Type :</label>
-            <select
-              className={styles.filterSelect}
-              value={eventTypeFilter}
-              onChange={(e) => setEventTypeFilter(e.target.value)}
-            >
-              <option value="all">Tous</option>
-              {eventTypes.map(type => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </div>
+                </div>
+              </div>
+            ) : <div style={{height:140,display:'flex',alignItems:'center',justifyContent:'center',color:T.textSecond,fontSize:'13px'}}>Aucune donnée</div>}
+          </Card>
         </div>
 
-        <div className={styles.logsTable}>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Agent</th>
-                <th>Type</th>
-                <th>Latence (ms)</th>
-                <th>Tokens</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.slice(0, 20).map(log => (
-                <tr key={log.id}>
-                  <td>{formatDate(log.created_at)}</td>
-                  <td className={styles.agentCell}>
-                    {log.agent_id ? log.agent_id.slice(0, 8) : '—'}
-                  </td>
-                  <td>
-                    <span className={styles.eventTypeBadge} style={{
-                      backgroundColor: `${getEventTypeColor(log.event_type)}20`,
-                      color: getEventTypeColor(log.event_type),
-                    }}>
-                      {log.event_type}
-                    </span>
-                  </td>
-                  <td>{log.latency_ms ?? '—'}</td>
-                  <td>{log.tokens_used ?? '—'}</td>
-                </tr>
+        {/* Logs table */}
+        <Card padding="0">
+          <div style={{padding:'14px 18px',borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{fontSize:'13px',fontWeight:600,color:T.textPrimary}}>Logs récents</div>
+            <div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
+              <button onClick={()=>setFilter('all')} style={{padding:'3px 10px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',fontSize:'11px',fontWeight:600,background:filter==='all'?AGENT.color:T.surfaceAlt,color:filter==='all'?'#fff':T.textSecond}}>Tous</button>
+              {eventTypes.slice(0,4).map(et => (
+                <button key={et} onClick={()=>setFilter(et)} style={{padding:'3px 10px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',fontSize:'11px',fontWeight:600,background:filter===et?AGENT.color:T.surfaceAlt,color:filter===et?'#fff':T.textSecond}}>{et}</button>
               ))}
-            </tbody>
-          </table>
-
-          {logs.length === 0 && (
-            <div className={styles.emptyLogs}>Aucun log</div>
+            </div>
+          </div>
+          {loading ? (
+            <div style={{padding:'32px',textAlign:'center',color:T.textSecond,fontSize:'13px'}}>Chargement...</div>
+          ) : displayed.length===0 ? (
+            <div style={{padding:'32px',textAlign:'center',color:T.textSecond,fontSize:'13px'}}>Aucun log pour cette période</div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+                <thead>
+                  <tr style={{background:T.surfaceAlt}}>
+                    {['Date','Type','Latence','Tokens','Modèle'].map(h => (
+                      <th key={h} style={{padding:'8px 14px',textAlign:'left',color:T.textSecond,fontWeight:600,fontSize:'11px',textTransform:'uppercase',letterSpacing:'.04em',borderBottom:`1px solid ${T.border}`}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayed.slice(0,30).map((log,i) => (
+                    <tr key={log.id} style={{borderBottom:`1px solid ${T.border}`,background:i%2===0?T.surface:T.bg}}>
+                      <td style={{padding:'8px 14px',color:T.textSecond,fontFamily:'monospace',fontSize:'11px'}}>
+                        {new Date(log.created_at).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                      </td>
+                      <td style={{padding:'8px 14px'}}><Badge label={log.event_type} /></td>
+                      <td style={{padding:'8px 14px',color:log.latency_ms&&log.latency_ms>3000?'#DC2626':T.textPrimary,fontFamily:'monospace'}}>
+                        {log.latency_ms?`${log.latency_ms}ms`:'—'}
+                      </td>
+                      <td style={{padding:'8px 14px',color:T.textPrimary,fontFamily:'monospace'}}>{log.tokens_used??'—'}</td>
+                      <td style={{padding:'8px 14px',color:T.textSecond,fontSize:'11px',fontFamily:'monospace'}}>{log.model_used??'—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
+        </Card>
       </div>
-    </div>
+    </DashboardShell>
   )
 }

@@ -1,572 +1,173 @@
 /**
- * /support — Dashboard opérateur Agent Support
- * Page principale : liste des sessions + vue conversation
- *
- * Architecture :
- *   - Colonne gauche  : liste filtrée des sessions
- *   - Colonne droite  : conversation active + actions
- *
- * Data fetching : Supabase RLS côté client
- * Realtime      : Supabase Realtime sur messages + sessions
+ * /support — Dashboard Lina, Agent Support
  */
-
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+import DashboardShell, { T, AgentHeader, Btn, EmptyState, Input, Badge } from '@/components/dashboard-shell'
 
-// ─────────────────────────────────────────────────────────────
-// Types locaux
-// ─────────────────────────────────────────────────────────────
+const AGENT = { emoji: '💬', name: 'Lina', role: 'Agent Support', color: '#1E3A8A', tags: ['Tickets', 'Résolution', 'Satisfaction'] }
 
-type SessionStatus = 'open' | 'resolved' | 'escalated' | 'transferred'
-
-type Session = {
-  id:         string
-  user_ref:   string | null
-  channel:    'chat' | 'email' | 'form'
-  status:     SessionStatus
-  created_at: string
-  updated_at: string
+function sb() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 }
 
-type Message = {
-  id:          string
-  session_id:  string
-  role:        'user' | 'assistant' | 'system'
-  content:     string
-  tokens_used: number | null
-  latency_ms:  number | null
-  created_at:  string
+type Session = { id: string; user_ref: string|null; channel: string; status: string; updated_at: string }
+type Message = { id: string; role: string; content: string; tokens_used: number|null; latency_ms: number|null; created_at: string }
+
+const STATUS_COLOR: Record<string,string> = { open:'#1E3A8A', resolved:'#16A34A', escalated:'#DC2626', transferred:'#D97706' }
+const STATUS_LABEL: Record<string,string> = { open:'Ouverte', resolved:'Résolue', escalated:'Escaladée', transferred:'Transférée' }
+
+function timeAgo(iso: string) {
+  const d = Date.now() - new Date(iso).getTime()
+  if (d < 60000) return "À l'instant"
+  if (d < 3600000) return `${Math.floor(d/60000)}m`
+  if (d < 86400000) return `${Math.floor(d/3600000)}h`
+  return new Date(iso).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})
 }
 
-type Filter = SessionStatus | 'all'
+export default function SupportPage() {
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [active,   setActive]   = useState<Session|null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [filter,   setFilter]   = useState('all')
+  const [search,   setSearch]   = useState('')
+  const [loading,  setLoading]  = useState(true)
+  const [updating, setUpdating] = useState(false)
+  const endRef = useRef<HTMLDivElement>(null)
 
-// ─────────────────────────────────────────────────────────────
-// Constantes UI
-// ─────────────────────────────────────────────────────────────
-
-const STATUS_LABEL: Record<SessionStatus, string> = {
-  open:        'Ouverte',
-  resolved:    'Résolue',
-  escalated:   'Escaladée',
-  transferred: 'Transférée',
-}
-
-const STATUS_COLOR: Record<SessionStatus, string> = {
-  open:        '#4F6EF7',
-  resolved:    '#2ECC71',
-  escalated:   '#E74C3C',
-  transferred: '#F39C12',
-}
-
-const CHANNEL_ICON: Record<string, string> = {
-  chat:  '💬',
-  email: '✉️',
-  form:  '📋',
-}
-
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
-
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  if (diff < 60_000)   return "À l'instant"
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-}
-
-function formatFullTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('fr-FR', {
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
-function displayUserRef(ref: string | null): string {
-  if (!ref) return 'Visiteur anonyme'
-  if (ref.includes('@')) return ref
-  return `#${ref.slice(0, 8)}`
-}
-
-// ─────────────────────────────────────────────────────────────
-// Composant SessionRow
-// ─────────────────────────────────────────────────────────────
-
-function SessionRow({
-  session,
-  isActive,
-  onClick,
-}: {
-  session:  Session
-  isActive: boolean
-  onClick:  () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        padding: '12px 16px',
-        background: isActive ? 'rgba(79,110,247,.12)' : 'transparent',
-        border: 'none',
-        borderLeft: isActive ? '3px solid #4F6EF7' : '3px solid transparent',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '10px',
-        transition: 'background 150ms ease',
-      }}
-    >
-      {/* Icône canal */}
-      <span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>
-        {CHANNEL_ICON[session.channel] ?? '💬'}
-      </span>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Identifiant + temps */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            fontSize: '13px', fontWeight: 600,
-            color: '#E8EAEE',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {displayUserRef(session.user_ref)}
-          </span>
-          <span style={{ fontSize: '10px', color: '#454D66', flexShrink: 0, fontFamily: 'monospace' }}>
-            {formatTime(session.updated_at)}
-          </span>
-        </div>
-
-        {/* Badge statut */}
-        <div style={{ marginTop: '4px' }}>
-          <span style={{
-            fontSize: '10px',
-            fontWeight: 600,
-            color: STATUS_COLOR[session.status],
-            background: `${STATUS_COLOR[session.status]}1A`,
-            padding: '2px 7px',
-            borderRadius: '20px',
-            textTransform: 'uppercase',
-            letterSpacing: '.04em',
-          }}>
-            {STATUS_LABEL[session.status]}
-          </span>
-        </div>
-      </div>
-    </button>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// Composant MessageBubble
-// ─────────────────────────────────────────────────────────────
-
-function MessageBubble({ msg }: { msg: Message }) {
-  if (msg.role === 'system') {
-    return (
-      <div style={{
-        alignSelf: 'center', fontSize: '11px',
-        color: '#454D66', textAlign: 'center',
-        padding: '4px 12px',
-        background: '#1E2336',
-        borderRadius: '20px',
-        border: '1px solid #2A3048',
-      }}>
-        {msg.content}
-      </div>
-    )
-  }
-
-  const isUser = msg.role === 'user'
-
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: isUser ? 'flex-end' : 'flex-start',
-      alignSelf: isUser ? 'flex-end' : 'flex-start',
-      maxWidth: '80%',
-      gap: '4px',
-    }}>
-      <div style={{
-        padding: '10px 14px',
-        borderRadius: '14px',
-        borderBottomRightRadius: isUser ? '3px' : '14px',
-        borderBottomLeftRadius:  isUser ? '14px' : '3px',
-        background: isUser ? '#1E2E6B' : '#1E2336',
-        border: isUser ? 'none' : '1px solid #2A3048',
-        fontSize: '13.5px',
-        lineHeight: '1.55',
-        color: '#E8EAEE',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
-        {msg.content}
-      </div>
-
-      {/* Méta : heure + tokens */}
-      <div style={{
-        display: 'flex', gap: '8px', alignItems: 'center',
-        fontSize: '10px', color: '#454D66', fontFamily: 'monospace',
-      }}>
-        <span>{formatFullTime(msg.created_at)}</span>
-        {msg.tokens_used && <span>{msg.tokens_used} tokens</span>}
-        {msg.latency_ms  && <span>{msg.latency_ms}ms</span>}
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
-// Page principale
-// ─────────────────────────────────────────────────────────────
-
-export default function SupportDashboard() {
-  const supabase = createClient()
-
-  // ── État ────────────────────────────────────────────────────
-  const [sessions,       setSessions]       = useState<Session[]>([])
-  const [activeId,       setActiveId]       = useState<string | null>(null)
-  const [messages,       setMessages]       = useState<Message[]>([])
-  const [filter,         setFilter]         = useState<Filter>('all')
-  const [search,         setSearch]         = useState('')
-  const [loadingSessions, setLoadingSessions] = useState(true)
-  const [loadingMessages, setLoadingMessages] = useState(false)
-  const [updatingStatus,  setUpdatingStatus]  = useState(false)
-
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const activeSession  = sessions.find(s => s.id === activeId) ?? null
-
-  // ── Charger les sessions ─────────────────────────────────────
-  const loadSessions = useCallback(async () => {
-    setLoadingSessions(true)
-    let q = supabase
-      .from('sessions')
-      .select('*')
-      .order('updated_at', { ascending: false })
-
+  const load = useCallback(async () => {
+    setLoading(true)
+    let q = sb().from('sessions').select('*').order('updated_at',{ascending:false})
     if (filter !== 'all') q = q.eq('status', filter)
-
     const { data } = await q
-    setSessions((data as Session[]) ?? [])
-    setLoadingSessions(false)
+    setSessions((data??[]) as Session[])
+    setLoading(false)
   }, [filter])
 
-  useEffect(() => { loadSessions() }, [loadSessions])
-
-  // ── Charger les messages d'une session ──────────────────────
-  const loadMessages = useCallback(async (sessionId: string) => {
-    setLoadingMessages(true)
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
-
-    setMessages((data as Message[]) ?? [])
-    setLoadingMessages(false)
-  }, [])
+  useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (activeId) loadMessages(activeId)
-    else setMessages([])
-  }, [activeId, loadMessages])
+    if (!active) { setMessages([]); return }
+    sb().from('messages').select('*').eq('session_id',active.id).order('created_at',{ascending:true})
+      .then(({data}) => setMessages((data??[]) as Message[]))
+  }, [active])
 
-  // ── Scroll bas automatique ───────────────────────────────────
+  useEffect(() => { endRef.current?.scrollIntoView({behavior:'smooth'}) }, [messages])
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // ── Realtime : nouveaux messages ────────────────────────────
-  useEffect(() => {
-    if (!activeId) return
-
-    const channel = supabase
-      .channel(`messages:${activeId}`)
-      .on('postgres_changes', {
-        event:  'INSERT',
-        schema: 'public',
-        table:  'messages',
-        filter: `session_id=eq.${activeId}`,
-      }, (payload) => {
-        setMessages(prev => [...prev, payload.new as Message])
-      })
+    if (!active) return
+    const ch = sb().channel(`msg:${active.id}`)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`session_id=eq.${active.id}`},
+        p => setMessages(prev => [...prev, p.new as Message]))
       .subscribe()
+    return () => { sb().removeChannel(ch) }
+  }, [active])
 
-    return () => { supabase.removeChannel(channel) }
-  }, [activeId])
-
-  // ── Realtime : mises à jour de sessions ─────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel('sessions-changes')
-      .on('postgres_changes', {
-        event:  '*',
-        schema: 'public',
-        table:  'sessions',
-      }, () => { loadSessions() })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [loadSessions])
-
-  // ── Changer le statut d'une session ─────────────────────────
-  async function updateStatus(sessionId: string, status: SessionStatus) {
-    setUpdatingStatus(true)
-    await supabase
-      .from('sessions')
-      .update({ status })
-      .eq('id', sessionId)
-
-    setSessions(prev =>
-      prev.map(s => s.id === sessionId ? { ...s, status } : s)
-    )
-    setUpdatingStatus(false)
+  async function updateStatus(status: string) {
+    if (!active || updating) return
+    setUpdating(true)
+    await sb().from('sessions').update({status}).eq('id',active.id)
+    setSessions(prev => prev.map(s => s.id === active.id ? {...s,status} : s))
+    setActive(prev => prev ? {...prev,status} : null)
+    setUpdating(false)
   }
 
-  // ── Filtrage par recherche ───────────────────────────────────
-  const filteredSessions = sessions.filter(s => {
-    if (!search) return true
-    const ref = (s.user_ref ?? '').toLowerCase()
-    return ref.includes(search.toLowerCase())
-  })
-
-  // ─────────────────────────────────────────────────────────────
-  // Rendu
-  // ─────────────────────────────────────────────────────────────
+  const displayed = sessions.filter(s => !search || (s.user_ref??'').toLowerCase().includes(search.toLowerCase()))
+  const openCount = sessions.filter(s => s.status==='open').length
 
   return (
-    <div style={{
-      display: 'flex',
-      height: '100vh',
-      background: '#0F1117',
-      color: '#E8EAEE',
-      fontFamily: "'Inter', system-ui, sans-serif",
-      overflow: 'hidden',
-    }}>
-
-      {/* ── Colonne gauche : liste des sessions ──────────────── */}
-      <div style={{
-        width: '300px',
-        flexShrink: 0,
-        borderRight: '1px solid #2A3048',
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#181C27',
-      }}>
-        {/* En-tête */}
-        <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid #2A3048' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h1 style={{ fontSize: '15px', fontWeight: 700, color: '#E8EAEE' }}>
-              Support
-            </h1>
-            <span style={{
-              fontSize: '11px', fontWeight: 600,
-              color: '#4F6EF7',
-              background: 'rgba(79,110,247,.12)',
-              padding: '2px 8px',
-              borderRadius: '20px',
-            }}>
-              {sessions.filter(s => s.status === 'open').length} ouvertes
-            </span>
-          </div>
-
-          {/* Recherche */}
-          <input
-            type="text"
-            placeholder="Rechercher…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              width: '100%',
-              background: '#1E2336',
-              border: '1px solid #2A3048',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              color: '#E8EAEE',
-              fontSize: '12px',
-              outline: 'none',
-              fontFamily: 'inherit',
-            }}
-          />
-
-          {/* Filtres statut */}
-          <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }}>
-            {(['all', 'open', 'escalated', 'resolved'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                style={{
-                  padding: '3px 10px',
-                  borderRadius: '20px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  background: filter === f ? '#4F6EF7' : '#1E2336',
-                  color:      filter === f ? '#fff' : '#7A839A',
-                  transition: 'all 150ms ease',
-                }}
-              >
-                {f === 'all' ? 'Toutes' : STATUS_LABEL[f]}
-              </button>
-            ))}
-          </div>
-        </div>
-
+    <DashboardShell>
+      <AgentHeader {...AGENT} stat={openCount} statLabel="ouvertes" />
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
         {/* Liste */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loadingSessions ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: '#454D66', fontSize: '13px' }}>
-              Chargement…
-            </div>
-          ) : filteredSessions.length === 0 ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: '#454D66', fontSize: '13px' }}>
-              Aucune session
-            </div>
-          ) : (
-            filteredSessions.map(session => (
-              <SessionRow
-                key={session.id}
-                session={session}
-                isActive={session.id === activeId}
-                onClick={() => setActiveId(session.id)}
-              />
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* ── Colonne droite : conversation ────────────────────── */}
-      {activeSession ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-
-          {/* Header conversation */}
-          <div style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid #2A3048',
-            background: '#181C27',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px',
-            flexShrink: 0,
-          }}>
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#E8EAEE' }}>
-                {displayUserRef(activeSession.user_ref)}
-              </div>
-              <div style={{ fontSize: '11px', color: '#7A839A', marginTop: '2px', fontFamily: 'monospace' }}>
-                {CHANNEL_ICON[activeSession.channel]} {activeSession.channel}
-                &nbsp;·&nbsp;
-                Ouvert le {new Date(activeSession.created_at).toLocaleDateString('fr-FR')}
-                &nbsp;·&nbsp;
-                <span style={{ color: '#454D66' }}>{activeSession.id.slice(0, 8)}…</span>
-              </div>
-            </div>
-
-            {/* Actions statut */}
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {activeSession.status === 'open' && (
-                <>
-                  <button
-                    onClick={() => updateStatus(activeSession.id, 'resolved')}
-                    disabled={updatingStatus}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#2ECC71',
-                      color: '#fff',
-                      opacity: updatingStatus ? .5 : 1,
-                    }}
-                  >
-                    Résoudre
-                  </button>
-                  <button
-                    onClick={() => updateStatus(activeSession.id, 'escalated')}
-                    disabled={updatingStatus}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      border: '1px solid #E74C3C',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: 'transparent',
-                      color: '#E74C3C',
-                      opacity: updatingStatus ? .5 : 1,
-                    }}
-                  >
-                    Escalader
-                  </button>
-                </>
-              )}
-              {activeSession.status !== 'open' && (
-                <span style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: STATUS_COLOR[activeSession.status],
-                  background: `${STATUS_COLOR[activeSession.status]}1A`,
+        <div style={{width:'276px',flexShrink:0,borderRight:`1px solid ${T.border}`,display:'flex',flexDirection:'column',background:T.bg}}>
+          <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.border}`,display:'flex',flexDirection:'column',gap:'8px'}}>
+            <Input value={search} onChange={setSearch} placeholder="Rechercher..." />
+            <div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
+              {['all','open','escalated','resolved'].map(f => (
+                <button key={f} onClick={() => setFilter(f)} style={{
+                  padding:'3px 10px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',
+                  fontSize:'11px',fontWeight:600,transition:'200ms',
+                  background: filter===f ? AGENT.color : T.surfaceAlt,
+                  color: filter===f ? '#fff' : T.textSecond,
                 }}>
-                  {STATUS_LABEL[activeSession.status]}
-                </span>
-              )}
+                  {f==='all'?'Toutes':STATUS_LABEL[f]}
+                </button>
+              ))}
             </div>
           </div>
-
-          {/* Messages */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}>
-            {loadingMessages ? (
-              <div style={{ textAlign: 'center', color: '#454D66', fontSize: '13px', marginTop: '40px' }}>
-                Chargement…
-              </div>
-            ) : messages.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#454D66', fontSize: '13px', marginTop: '40px' }}>
-                Aucun message dans cette session.
-              </div>
-            ) : (
-              messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)
-            )}
-            <div ref={messagesEndRef} />
+          <div style={{flex:1,overflowY:'auto'}}>
+            {loading ? <div style={{padding:'24px',textAlign:'center',color:T.textSecond,fontSize:'13px'}}>Chargement...</div>
+              : displayed.length===0 ? <EmptyState icon="💬" title="Aucune session" />
+              : displayed.map(s => (
+                <button key={s.id} onClick={() => setActive(s)} style={{
+                  width:'100%',textAlign:'left',padding:'11px 14px',
+                  background: active?.id===s.id ? `${AGENT.color}08` : 'transparent',
+                  borderLeft: active?.id===s.id ? `3px solid ${AGENT.color}` : '3px solid transparent',
+                  border:'none',borderBottom:`1px solid ${T.border}`,cursor:'pointer',transition:'200ms',
+                }}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:'13px',fontWeight:600,color:T.textPrimary}}>{s.user_ref??'Visiteur anonyme'}</span>
+                    <span style={{fontSize:'10px',color:T.textSecond,fontFamily:'monospace'}}>{timeAgo(s.updated_at)}</span>
+                  </div>
+                  <div style={{marginTop:'4px'}}><Badge label={STATUS_LABEL[s.status]??s.status} color={STATUS_COLOR[s.status]} /></div>
+                </button>
+              ))}
           </div>
         </div>
 
-      ) : (
-        /* État vide */
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: '12px',
-          color: '#454D66',
-        }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <p style={{ fontSize: '14px' }}>Sélectionner une session</p>
-        </div>
-      )}
-    </div>
+        {/* Conversation */}
+        {active ? (
+          <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div style={{padding:'12px 20px',background:T.surface,borderBottom:`1px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+              <div>
+                <div style={{fontSize:'14px',fontWeight:600,color:T.textPrimary}}>{active.user_ref??'Visiteur anonyme'}</div>
+                <div style={{fontSize:'11px',color:T.textSecond,marginTop:'2px',fontFamily:'monospace'}}>{active.channel} · {active.id.slice(0,8)}...</div>
+              </div>
+              <div style={{display:'flex',gap:'6px'}}>
+                {active.status==='open' && <>
+                  <Btn variant="primary" size="sm" onClick={() => updateStatus('resolved')} loading={updating}>✓ Résoudre</Btn>
+                  <Btn variant="danger" size="sm" onClick={() => updateStatus('escalated')} loading={updating}>↑ Escalader</Btn>
+                </>}
+                {active.status!=='open' && <Badge label={STATUS_LABEL[active.status]??active.status} color={STATUS_COLOR[active.status]} />}
+              </div>
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:'20px',display:'flex',flexDirection:'column',gap:'10px',background:T.bg}}>
+              {messages.map(m => {
+                if (m.role==='system') return (
+                  <div key={m.id} style={{alignSelf:'center',fontSize:'11px',color:T.textSecond,background:T.surface,padding:'3px 12px',borderRadius:T.radiusFull,border:`1px solid ${T.border}`}}>
+                    {m.content}
+                  </div>
+                )
+                const isUser = m.role==='user'
+                return (
+                  <div key={m.id} style={{display:'flex',flexDirection:'column',maxWidth:'78%',gap:'3px',alignSelf:isUser?'flex-end':'flex-start',alignItems:isUser?'flex-end':'flex-start'}}>
+                    <div style={{
+                      padding:'10px 14px',
+                      borderRadius: isUser ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
+                      background: isUser ? T.surfaceAlt : T.primary,
+                      color: isUser ? T.textPrimary : '#fff',
+                      fontSize:'13.5px',lineHeight:'1.55',whiteSpace:'pre-wrap',wordBreak:'break-word',
+                    }}>{m.content}</div>
+                    <div style={{fontSize:'10px',color:T.textSecond,fontFamily:'monospace',display:'flex',gap:'8px'}}>
+                      <span>{new Date(m.created_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+                      {m.tokens_used!=null&&<span>{m.tokens_used} tokens</span>}
+                      {m.latency_ms!=null&&<span>{m.latency_ms}ms</span>}
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={endRef} />
+            </div>
+          </div>
+        ) : (
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',background:T.bg}}>
+            <EmptyState icon="💬" title="Sélectionner une session" subtitle="Cliquez sur une session pour voir la conversation." />
+          </div>
+        )}
+      </div>
+    </DashboardShell>
   )
 }

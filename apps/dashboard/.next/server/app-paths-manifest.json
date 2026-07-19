@@ -1,4 +1,8 @@
 {
+  "/(dashboard)/support/page": "app/(dashboard)/support/page.js",
+  "/(dashboard)/milo/page": "app/(dashboard)/milo/page.js",
   "/(dashboard)/sara/page": "app/(dashboard)/sara/page.js",
-  "/page": "app/page.js"
+  "/(dashboard)/kb/page": "app/(dashboard)/kb/page.js",
+  "/(dashboard)/ava/page": "app/(dashboard)/ava/page.js",
+  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js"
 }

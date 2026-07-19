@@ -1,467 +1,186 @@
 /**
- * /kb — Interface de gestion de la Base de Connaissances
+ * /kb — Base de connaissances
  */
-
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Card, Input, Badge } from '@/components/dashboard-shell'
 
-type AgentType = 'support' | 'sales' | 'shared'
-
-type Chunk = {
-  id:         string
-  content:    string
-  agent_id:   string | null
-  source:     string
-  source_ref: string | null
-  metadata:   Record<string, unknown>
-  created_at: string
-  embedding_generated?: boolean
-}
-
+const AGENT = { emoji: '🧠', name: 'KB', role: 'Base de connaissances', color: '#7C3AED', tags: ['RAG', 'Vecteurs', 'Documents'] }
 const API_URL         = 'http://127.0.0.1:8000/v1'
 const WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e'
 
-const AGENT_ID = {
+const AGENT_IDS: Record<string,string> = {
   support: '00000000-0000-0000-0000-000000000020',
   sales:   '00000000-0000-0000-0000-000000000021',
-  shared:  null,
+}
+const AGENT_COLORS: Record<string,string> = { support:'#1E3A8A', sales:'#D97706', shared:'#7C3AED' }
+
+type Chunk = { id:string; content:string; agent_id:string|null; source:string; source_ref:string|null; metadata:any; created_at:string; similarity?: number }
+type AgentFilter = 'all'|'support'|'sales'|'shared'
+
+function agentLabel(id: string|null): string {
+  if (!id) return 'Partagé'
+  if (id===AGENT_IDS.support) return 'Support'
+  if (id===AGENT_IDS.sales)   return 'Sales'
+  return 'Autre'
+}
+function agentColor(id: string|null): string {
+  if (!id) return AGENT_COLORS.shared
+  if (id===AGENT_IDS.support) return AGENT_COLORS.support
+  if (id===AGENT_IDS.sales)   return AGENT_COLORS.sales
+  return AGENT.color
 }
 
-const AGENT_LABEL: Record<AgentType, string> = {
-  support: 'Support client',
-  sales:   'Agent ventes',
-  shared:  'Partagé (tous les agents)',
-}
-
-const AGENT_COLOR: Record<AgentType, string> = {
-  support: '#4F6EF7',
-  sales:   '#F39C12',
-  shared:  '#2ECC71',
-}
-
-function agentTypeFromId(id: string | null): AgentType {
-  if (!id) return 'shared'
-  if (id === AGENT_ID.support) return 'support'
-  if (id === AGENT_ID.sales)   return 'sales'
-  return 'shared'
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
+const h = { 'Content-Type':'application/json', 'x-workspace-token': WORKSPACE_TOKEN }
 
 export default function KBPage() {
-  const [chunks,      setChunks]      = useState<Chunk[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [filter,      setFilter]      = useState<AgentType | 'all'>('all')
-  const [adding,      setAdding]      = useState(false)
-  const [deleting,    setDeleting]    = useState<string | null>(null)
-  const [showForm,    setShowForm]    = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Chunk[] | null>(null)
-  const [searching,   setSearching]   = useState(false)
-  const [error,       setError]       = useState('')
+  const [chunks,    setChunks]    = useState<Chunk[]>([])
+  const [filter,    setFilter]    = useState<AgentFilter>('all')
+  const [search,    setSearch]    = useState('')
+  const [loading,   setLoading]   = useState(true)
+  const [showForm,  setShowForm]  = useState(false)
+  const [adding,    setAdding]    = useState(false)
+  const [deleting,  setDeleting]  = useState<string|null>(null)
+  const [error,     setError]     = useState('')
+  const [srQuery,   setSrQuery]   = useState('')
+  const [srResults, setSrResults] = useState<Chunk[]|null>(null)
+  const [searching, setSearching] = useState(false)
+  const [formContent, setFormContent] = useState('')
+  const [formAgent,   setFormAgent]   = useState<'support'|'sales'|'shared'>('support')
+  const [formRef,     setFormRef]     = useState('')
 
-  // Form state
-  const [formContent,  setFormContent]  = useState('')
-  const [formAgent,    setFormAgent]    = useState<AgentType>('support')
-  const [formSourceRef, setFormSourceRef] = useState('')
-
-  const headers = {
-    'Content-Type':      'application/json',
-    'x-workspace-token': WORKSPACE_TOKEN,
-  }
-
-  // ── Charger les chunks ──────────────────────────────────────
-  const loadChunks = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true)
-    setError('')
     try {
-      const res  = await fetch(`${API_URL}/knowledge?per_page=50`, { headers })
+      const res = await fetch(`${API_URL}/knowledge?per_page=50`, {headers:h})
       const data = await res.json()
-      setChunks(data.chunks ?? [])
-    } catch (err) {
-      setError('Impossible de charger la KB — API hors ligne ?')
-    } finally {
-      setLoading(false)
-    }
+      setChunks(data.chunks??[])
+    } catch { setError('API hors ligne ?') } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { loadChunks() }, [loadChunks])
+  useEffect(() => { load() }, [load])
 
-  // ── Ajouter un chunk ─────────────────────────────────────────
   async function addChunk() {
     if (!formContent.trim()) return
-    setAdding(true)
-    setError('')
+    setAdding(true); setError('')
     try {
-      const res = await fetch(`${API_URL}/knowledge`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          content:    formContent.trim(),
-          agent_id:   AGENT_ID[formAgent],
-          source:     'manual',
-          source_ref: formSourceRef.trim() || undefined,
-        }),
+      const res = await fetch(`${API_URL}/knowledge`,{
+        method:'POST', headers:h,
+        body:JSON.stringify({content:formContent.trim(),agent_id:AGENT_IDS[formAgent]??null,source:'manual',source_ref:formRef.trim()||undefined}),
       })
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
       const chunk = await res.json()
       setChunks(prev => [chunk, ...prev])
-      setFormContent('')
-      setFormSourceRef('')
-      setShowForm(false)
-    } catch (err) {
-      setError("Erreur lors de l'ajout du chunk.")
-    } finally {
-      setAdding(false)
-    }
+      setFormContent(''); setFormRef(''); setShowForm(false)
+    } catch(e:any) { setError(e.message) } finally { setAdding(false) }
   }
 
-  // ── Supprimer un chunk ──────────────────────────────────────
   async function deleteChunk(id: string) {
     setDeleting(id)
-    try {
-      await fetch(`${API_URL}/knowledge/${id}`, { method: 'DELETE', headers })
-      setChunks(prev => prev.filter(c => c.id !== id))
-    } catch (err) {
-      setError('Erreur lors de la suppression.')
-    } finally {
-      setDeleting(null)
-    }
+    await fetch(`${API_URL}/knowledge/${id}`,{method:'DELETE',headers:h})
+    setChunks(prev => prev.filter(c => c.id!==id))
+    setDeleting(null)
   }
 
-  // ── Recherche sémantique ────────────────────────────────────
-  async function search() {
-    if (!searchQuery.trim()) return
-    setSearching(true)
-    setSearchResults(null)
+  async function semanticSearch() {
+    if (!srQuery.trim()) return
+    setSearching(true); setSrResults(null)
     try {
-      const res = await fetch(`${API_URL}/knowledge/search`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query: searchQuery, limit: 5 }),
-      })
+      const res = await fetch(`${API_URL}/knowledge/search`,{method:'POST',headers:h,body:JSON.stringify({query:srQuery,limit:5})})
       const data = await res.json()
-      setSearchResults(data.results ?? [])
-    } catch (err) {
-      setError('Erreur recherche.')
-    } finally {
-      setSearching(false)
-    }
+      setSrResults(data.results??[])
+    } catch { } finally { setSearching(false) }
   }
 
-  // ── Filtrage ────────────────────────────────────────────────
-  const filteredChunks = chunks.filter(c => {
-    if (filter === 'all') return true
-    return agentTypeFromId(c.agent_id) === filter
+  const displayed = (srResults ?? chunks).filter(c => {
+    if (filter==='all') return true
+    if (filter==='shared') return !c.agent_id
+    return c.agent_id===AGENT_IDS[filter]
   })
 
-  const displayChunks = searchResults ?? filteredChunks
-
-  // ─────────────────────────────────────────────────────────────
-  // Rendu
-  // ─────────────────────────────────────────────────────────────
-
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0F1117',
-      color: '#E8EAEE', fontFamily: "'Inter', system-ui, sans-serif",
-      padding: '32px',
-    }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+    <DashboardShell>
+      <AgentHeader {...AGENT} stat={chunks.length} statLabel="chunks" action={
+        <Btn variant="primary" onClick={()=>setShowForm(!showForm)}>+ Ajouter</Btn>
+      } />
+      <div style={{flex:1,overflowY:'auto',padding:'20px 24px',background:T.bg}}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-          <div>
-            <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#E8EAEE' }}>
-              Base de connaissances
-            </h1>
-            <p style={{ fontSize: '13px', color: '#7A839A', marginTop: '4px' }}>
-              {chunks.length} chunk{chunks.length > 1 ? 's' : ''} — utilisés par le RAG pour répondre aux clients
-            </p>
-          </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            style={{
-              padding: '9px 18px', borderRadius: '8px', border: 'none',
-              cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-              background: '#4F6EF7', color: '#fff',
-              transition: 'background 150ms',
-            }}
-          >
-            + Ajouter un chunk
-          </button>
-        </div>
+        {error && <div style={{padding:'10px 14px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:T.radiusSm,fontSize:'13px',color:T.danger,marginBottom:'16px'}}>{error}</div>}
 
-        {/* Erreur */}
-        {error && (
-          <div style={{
-            padding: '10px 14px', background: 'rgba(231,76,60,.1)',
-            border: '1px solid rgba(231,76,60,.3)', borderRadius: '8px',
-            fontSize: '13px', color: '#E74C3C', marginBottom: '16px',
-          }}>
-            {error}
-          </div>
-        )}
-
-        {/* Formulaire d'ajout */}
+        {/* Formulaire */}
         {showForm && (
-          <div style={{
-            background: '#181C27', border: '1px solid #2A3048',
-            borderRadius: '12px', padding: '20px', marginBottom: '24px',
-          }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: '#E8EAEE' }}>
-              Nouveau chunk
-            </h3>
-
-            {/* Sélecteur agent */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-              {(['support', 'sales', 'shared'] as AgentType[]).map(a => (
-                <button
-                  key={a}
-                  onClick={() => setFormAgent(a)}
-                  style={{
-                    padding: '6px 14px', borderRadius: '20px', border: 'none',
-                    cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                    background: formAgent === a ? AGENT_COLOR[a] : '#1E2336',
-                    color: formAgent === a ? '#fff' : '#7A839A',
-                    transition: 'all 150ms',
-                  }}
-                >
-                  {AGENT_LABEL[a]}
-                </button>
+          <Card padding="18px 20px" style={{marginBottom:'16px'}}>
+            <div style={{fontSize:'14px',fontWeight:600,color:T.textPrimary,marginBottom:'14px'}}>Nouveau chunk</div>
+            <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
+              {(['support','sales','shared'] as const).map(a => (
+                <button key={a} onClick={()=>setFormAgent(a)} style={{
+                  padding:'5px 14px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',
+                  fontSize:'12px',fontWeight:600,transition:'200ms',
+                  background: formAgent===a ? AGENT_COLORS[a] : T.surfaceAlt,
+                  color: formAgent===a ? '#fff' : T.textSecond,
+                }}>{a==='shared'?'Partagé':a==='support'?'Support':'Sales'}</button>
               ))}
             </div>
-
-            {/* Contenu */}
-            <textarea
-              value={formContent}
-              onChange={e => setFormContent(e.target.value)}
-              placeholder="Contenu du chunk — ce texte sera vectorisé et utilisé par le RAG pour répondre aux questions..."
-              rows={5}
-              style={{
-                width: '100%', background: '#1E2336',
-                border: '1px solid #2A3048', borderRadius: '8px',
-                padding: '10px 14px', color: '#E8EAEE',
-                fontSize: '13px', lineHeight: '1.5',
-                fontFamily: 'inherit', resize: 'vertical', outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-
-            {/* Source ref */}
-            <input
-              type="text"
-              value={formSourceRef}
-              onChange={e => setFormSourceRef(e.target.value)}
-              placeholder="Référence source (optionnel) — ex: faq-delais, page-tarifs"
-              style={{
-                width: '100%', background: '#1E2336',
-                border: '1px solid #2A3048', borderRadius: '8px',
-                padding: '8px 14px', color: '#E8EAEE',
-                fontSize: '12px', fontFamily: 'inherit', outline: 'none',
-                marginTop: '8px', boxSizing: 'border-box',
-              }}
-            />
-
-            {/* Compteur */}
-            <div style={{ fontSize: '11px', color: '#454D66', marginTop: '6px', textAlign: 'right' }}>
-              {formContent.length} / 8000 caractères
+            <textarea value={formContent} onChange={e=>setFormContent(e.target.value)}
+              placeholder="Contenu du chunk — ce texte sera vectorisé et utilisé par le RAG..."
+              rows={4} style={{width:'100%',background:T.surfaceAlt,border:`1px solid ${T.border}`,borderRadius:T.radiusSm,padding:'10px 12px',color:T.textPrimary,fontSize:'13px',lineHeight:'1.5',fontFamily:T.fontBody,resize:'vertical',outline:'none',boxSizing:'border-box',marginBottom:'8px'}} />
+            <Input value={formRef} onChange={setFormRef} placeholder="Référence source (optionnel) — ex: faq-delais" style={{marginBottom:'12px'}} />
+            <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
+              <Btn variant="ghost" size="sm" onClick={()=>{setShowForm(false);setFormContent('');setFormRef('')}}>Annuler</Btn>
+              <Btn variant="primary" size="sm" onClick={addChunk} loading={adding} disabled={formContent.trim().length<10}>Ajouter</Btn>
             </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '14px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => { setShowForm(false); setFormContent(''); setFormSourceRef('') }}
-                style={{
-                  padding: '8px 16px', borderRadius: '8px',
-                  border: '1px solid #2A3048', cursor: 'pointer',
-                  fontSize: '13px', background: 'transparent', color: '#7A839A',
-                }}
-              >
-                Annuler
-              </button>
-              <button
-                onClick={addChunk}
-                disabled={adding || formContent.trim().length < 10}
-                style={{
-                  padding: '8px 16px', borderRadius: '8px', border: 'none',
-                  cursor: adding ? 'not-allowed' : 'pointer',
-                  fontSize: '13px', fontWeight: 600,
-                  background: '#4F6EF7', color: '#fff',
-                  opacity: adding || formContent.trim().length < 10 ? .5 : 1,
-                }}
-              >
-                {adding ? 'Génération embedding...' : 'Ajouter'}
-              </button>
-            </div>
-          </div>
+          </Card>
         )}
 
         {/* Recherche sémantique */}
-        <div style={{
-          display: 'flex', gap: '8px', marginBottom: '20px',
-        }}>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults(null) }}
-            onKeyDown={e => e.key === 'Enter' && search()}
-            placeholder="Recherche sémantique dans la KB..."
-            style={{
-              flex: 1, background: '#181C27', border: '1px solid #2A3048',
-              borderRadius: '8px', padding: '9px 14px', color: '#E8EAEE',
-              fontSize: '13px', outline: 'none', fontFamily: 'inherit',
-            }}
-          />
-          <button
-            onClick={search}
-            disabled={searching || !searchQuery.trim()}
-            style={{
-              padding: '9px 16px', borderRadius: '8px', border: 'none',
-              cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-              background: '#1E2336', color: '#7A839A',
-              border: '1px solid #2A3048',
-              opacity: searching || !searchQuery.trim() ? .5 : 1,
-            }}
-          >
-            {searching ? '...' : 'Rechercher'}
-          </button>
-          {searchResults && (
-            <button
-              onClick={() => { setSearchResults(null); setSearchQuery('') }}
-              style={{
-                padding: '9px 14px', borderRadius: '8px',
-                border: '1px solid #2A3048', cursor: 'pointer',
-                fontSize: '12px', background: 'transparent', color: '#7A839A',
-              }}
-            >
-              ✕
-            </button>
-          )}
+        <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+          <Input value={srQuery} onChange={v=>{setSrQuery(v);if(!v)setSrResults(null)}}
+            placeholder="Recherche sémantique..."
+            style={{flex:1}} />
+          <Btn variant="ghost" onClick={semanticSearch} loading={searching} disabled={!srQuery.trim()}>Rechercher</Btn>
+          {srResults && <Btn variant="ghost" size="sm" onClick={()=>{setSrResults(null);setSrQuery('')}}>✕</Btn>}
         </div>
 
         {/* Filtres */}
-        {!searchResults && (
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-            {(['all', 'support', 'sales', 'shared'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                style={{
-                  padding: '4px 12px', borderRadius: '20px', border: 'none',
-                  cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                  background: filter === f ? (f === 'all' ? '#4F6EF7' : AGENT_COLOR[f as AgentType]) : '#181C27',
-                  color: filter === f ? '#fff' : '#7A839A',
-                  transition: 'all 150ms',
-                }}
-              >
-                {f === 'all' ? `Tous (${chunks.length})` : AGENT_LABEL[f as AgentType]}
+        {!srResults && (
+          <div style={{display:'flex',gap:'5px',marginBottom:'14px'}}>
+            {(['all','support','sales','shared'] as AgentFilter[]).map(f => (
+              <button key={f} onClick={()=>setFilter(f)} style={{
+                padding:'4px 12px',borderRadius:T.radiusFull,border:'none',cursor:'pointer',
+                fontSize:'12px',fontWeight:600,transition:'200ms',
+                background: filter===f ? (f==='all'?T.primary:AGENT_COLORS[f]??T.primary) : T.surfaceAlt,
+                color: filter===f ? '#fff' : T.textSecond,
+              }}>
+                {f==='all'?`Tous (${chunks.length})`:f==='shared'?'Partagé':f==='support'?'Support':'Sales'}
               </button>
             ))}
           </div>
         )}
 
-        {/* Résultats recherche label */}
-        {searchResults && (
-          <div style={{ fontSize: '12px', color: '#7A839A', marginBottom: '12px' }}>
-            {searchResults.length} résultat{searchResults.length > 1 ? 's' : ''} pour "{searchQuery}"
-          </div>
-        )}
-
-        {/* Liste des chunks */}
-        {loading ? (
-          <div style={{ textAlign: 'center', color: '#454D66', padding: '40px' }}>Chargement...</div>
-        ) : displayChunks.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#454D66', padding: '40px', fontSize: '14px' }}>
-            {searchResults ? 'Aucun résultat' : 'Aucun chunk — ajoutez du contenu à la KB'}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {displayChunks.map((chunk) => {
-              const agentType = agentTypeFromId(chunk.agent_id)
-              const similarity = (chunk as any).similarity
-
-              return (
-                <div
-                  key={chunk.id}
-                  style={{
-                    background: '#181C27',
-                    border: '1px solid #2A3048',
-                    borderLeft: `3px solid ${AGENT_COLOR[agentType]}`,
-                    borderRadius: '10px',
-                    padding: '16px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{
-                        fontSize: '10px', fontWeight: 600,
-                        color: AGENT_COLOR[agentType],
-                        background: `${AGENT_COLOR[agentType]}1A`,
-                        padding: '2px 8px', borderRadius: '20px',
-                        textTransform: 'uppercase',
-                      }}>
-                        {AGENT_LABEL[agentType]}
-                      </span>
-                      {chunk.source_ref && (
-                        <span style={{
-                          fontSize: '10px', color: '#454D66',
-                          background: '#1E2336', padding: '2px 8px',
-                          borderRadius: '20px', fontFamily: 'monospace',
-                        }}>
-                          {chunk.source_ref}
-                        </span>
-                      )}
-                      {similarity !== undefined && (
-                        <span style={{
-                          fontSize: '10px', fontWeight: 600,
-                          color: '#2ECC71',
-                          background: 'rgba(46,204,113,.1)',
-                          padding: '2px 8px', borderRadius: '20px',
-                        }}>
-                          {Math.round(similarity * 100)}% similarité
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => deleteChunk(chunk.id)}
-                      disabled={deleting === chunk.id}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: '#454D66', fontSize: '16px', flexShrink: 0,
-                        opacity: deleting === chunk.id ? .4 : 1,
-                        transition: 'color 150ms',
-                      }}
-                      title="Supprimer"
-                    >
-                      ×
-                    </button>
+        {/* Chunks */}
+        {loading ? <div style={{padding:'32px',textAlign:'center',color:T.textSecond,fontSize:'13px'}}>Chargement...</div>
+          : displayed.length===0 ? <EmptyState icon="🧠" title="Aucun chunk" subtitle="Ajoutez du contenu à la base de connaissances." />
+          : <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {displayed.map(chunk => (
+              <Card key={chunk.id} padding="14px 16px" style={{borderLeft:`3px solid ${agentColor(chunk.agent_id)}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                  <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+                    <Badge label={agentLabel(chunk.agent_id)} color={agentColor(chunk.agent_id)} />
+                    {chunk.source_ref && <Badge label={chunk.source_ref} />}
+                    {chunk.similarity!=null && <Badge label={`${Math.round(chunk.similarity*100)}% similaire`} color={T.success} />}
                   </div>
-
-                  <p style={{
-                    fontSize: '13px', lineHeight: '1.6', color: '#C8CDD8',
-                    whiteSpace: 'pre-wrap',
-                  }}>
-                    {chunk.content}
-                  </p>
-
-                  <div style={{ fontSize: '10px', color: '#454D66', marginTop: '10px', fontFamily: 'monospace' }}>
-                    {formatDate(chunk.created_at)} · {chunk.id.slice(0, 8)}...
-                  </div>
+                  <button onClick={()=>deleteChunk(chunk.id)} disabled={deleting===chunk.id} style={{background:'none',border:'none',cursor:'pointer',color:T.textSecond,fontSize:'16px',opacity:deleting===chunk.id?.4:1}}>×</button>
                 </div>
-              )
-            })}
+                <p style={{fontSize:'13px',lineHeight:'1.6',color:T.textPrimary,whiteSpace:'pre-wrap'}}>{chunk.content}</p>
+                <div style={{fontSize:'10px',color:T.textSecond,marginTop:'8px',fontFamily:'monospace'}}>
+                  {new Date(chunk.created_at).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})} · {chunk.id.slice(0,8)}...
+                </div>
+              </Card>
+            ))}
           </div>
-        )}
+        }
       </div>
-    </div>
+    </DashboardShell>
   )
 }

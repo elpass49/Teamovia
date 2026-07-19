@@ -1,0 +1,34 @@
+/* Teamovia Dashboard — Global CSS */
+/* Design tokens from design.json */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --bg:           #FAFAF7;
+  --surface:      #FFFFFF;
+  --surface-alt:  #F4F2EC;
+  --text-primary: #0B0F1A;
+  --text-second:  #5A6472;
+  --border:       #E7E4DC;
+  --primary:      #1E3A8A;
+  --primary-hov:  #172E6E;
+  --accent:       #F59E0B;
+  --accent-soft:  #FEF3C7;
+  --success:      #16A34A;
+  --danger:       #DC2626;
+  --radius:       12px;
+  --radius-sm:    8px;
+  --radius-btn:   10px;
+  --radius-full:  999px;
+  --shadow:       0 1px 2px rgba(11,15,26,.04), 0 8px 24px rgba(11,15,26,.06);
+  --shadow-sm:    0 1px 2px rgba(11,15,26,.06);
+  --font-head:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --transition:   200ms ease-out;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); }
+a { color: inherit; text-decoration: none; }
+button { font-family: var(--font-body); }
+input, textarea, select { font-family: var(--font-body); }
