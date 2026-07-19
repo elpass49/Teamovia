@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Input, Badge } from '@/components/dashboard-shell'
+import DashboardShell, { T, AgentHeader, AGENTS, EmptyState, Input, Badge } from '@/components/dashboard-shell'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
