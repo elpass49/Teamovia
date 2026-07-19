@@ -4,7 +4,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Card, Input, Badge } from '@/components/dashboard-shell'
+import DashboardShell, { T, AgentHeader, Btn, EmptyState, Card, Input, Badge } from '@/components/dashboard-shell'
 
 const AGENT = { emoji: '🧠', name: 'KB', role: 'Base de connaissances', color: '#7C3AED', tags: ['RAG', 'Vecteurs', 'Documents'] }
 const API_URL         = 'http://127.0.0.1:8000/v1'
