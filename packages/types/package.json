@@ -6,12 +6,12 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
-      "default": "./dist/src/index.js"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./database": {
-      "types": "./dist/src/database.d.ts",
-      "default": "./dist/src/database.js"
+      "types": "./dist/database.d.ts",
+      "default": "./dist/database.js"
     }
   },
   "scripts": {

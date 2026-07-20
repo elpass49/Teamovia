@@ -5,9 +5,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Input, Badge } from '@/components/dashboard-shell'
+import DashboardShell, { T, AgentHeader, Btn, EmptyState, Card, Input, Badge } from '@/components/dashboard-shell'
 
-const AGENT = { emoji: '📈', name: 'Noah', role: 'Agent Sales', color: '#D97706', tags: ['Pipeline', 'Relances', 'Propositions'] }
+const AGENT = { label: 'Noah', emoji: '📈', name: 'Noah', role: 'Agent Sales', color: '#D97706', tags: ['Pipeline', 'Relances', 'Propositions'] }
 const API_URL         = 'http://127.0.0.1:8000/v1'
 const WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e'
 

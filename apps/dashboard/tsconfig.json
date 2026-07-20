@@ -10,7 +10,6 @@
     "jsx": "preserve",
     "incremental": true,
     "outDir": ".next",
-    "rootDir": "src",
     "baseUrl": ".",
     "paths": {
       "@/*": [

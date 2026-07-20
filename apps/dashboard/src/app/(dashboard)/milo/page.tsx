@@ -4,9 +4,9 @@
 'use client'
 
 import { useState } from 'react'
-import DashboardShell, { T, AgentHeader, Btn, EmptyState, Badge } from '@/components/dashboard-shell'
+import DashboardShell, { T, AgentHeader, Btn, EmptyState, Card } from '@/components/dashboard-shell'
 
-const AGENT = { emoji: '✍️', name: 'Milo', role: 'Agent Contenu', color: '#D97706', tags: ['Rédaction', 'Campagnes', 'Social media'] }
+const AGENT = { label: 'Milo', emoji: '✍️', name: 'Milo', role: 'Agent Contenu', color: '#D97706', tags: ['Rédaction', 'Campagnes', 'Social media'] }
 const API_URL         = 'http://127.0.0.1:8000/v1'
 const WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e'
 

@@ -25,6 +25,9 @@ importers:
       '@teamovia/agents-sdk':
         specifier: workspace:*
         version: link:../../packages/agents-sdk
+      '@teamovia/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       next:
         specifier: ^15.0.0
         version: 15.5.20(@opentelemetry/api@1.9.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
