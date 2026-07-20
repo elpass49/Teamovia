@@ -30,7 +30,7 @@ function agentColor(id: string|null): string {
   if (!id) return AGENT_COLORS.shared
   if (id===AGENT_IDS.support) return AGENT_COLORS.support
   if (id===AGENT_IDS.sales)   return AGENT_COLORS.sales
-  return AGENT.color
+  return '#7C3AED'
 }
 
 const h = { 'Content-Type':'application/json', 'x-workspace-token': WORKSPACE_TOKEN }
