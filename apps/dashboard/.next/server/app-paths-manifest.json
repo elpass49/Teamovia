@@ -1,13 +1,13 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/(dashboard)/milo/page": "app/(dashboard)/milo/page.js",
   "/(dashboard)/ava/page": "app/(dashboard)/ava/page.js",
-  "/(dashboard)/sara/page": "app/(dashboard)/sara/page.js",
+  "/(dashboard)/milo/page": "app/(dashboard)/milo/page.js",
+  "/(dashboard)/kb/page": "app/(dashboard)/kb/page.js",
   "/(dashboard)/sales/page": "app/(dashboard)/sales/page.js",
   "/(dashboard)/monitoring/page": "app/(dashboard)/monitoring/page.js",
+  "/(dashboard)/sara/page": "app/(dashboard)/sara/page.js",
   "/(dashboard)/support/page": "app/(dashboard)/support/page.js",
   "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
   "/page": "app/page.js",
-  "/(dashboard)/kb/page": "app/(dashboard)/kb/page.js",
   "/login/page": "app/login/page.js"
 }
