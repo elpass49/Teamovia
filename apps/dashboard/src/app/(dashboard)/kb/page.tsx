@@ -38,7 +38,6 @@ const h = { 'Content-Type':'application/json', 'x-workspace-token': WORKSPACE_TO
 export default function KBPage() {
   const [chunks,    setChunks]    = useState<Chunk[]>([])
   const [filter,    setFilter]    = useState<AgentFilter>('all')
-  const [search,    setSearch]    = useState('')
   const [loading,   setLoading]   = useState(true)
   const [showForm,  setShowForm]  = useState(false)
   const [adding,    setAdding]    = useState(false)
