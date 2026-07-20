@@ -101,7 +101,7 @@ export default function KBPage() {
 
   return (
     <DashboardShell>
-      <AgentHeader {...AGENT} stat={chunks.length} statLabel="chunks" action={
+      <AgentHeader label="KB" role="Base de connaissances" color="#7C3AED" tags={['RAG','Vecteurs','Documents']} image={null} stat={chunks.length} statLabel="chunks" action={
         <Btn variant="primary" onClick={()=>setShowForm(!showForm)}>+ Ajouter</Btn>
       } />
       <div style={{flex:1,overflowY:'auto',padding:'20px 24px',background:T.bg}}>
