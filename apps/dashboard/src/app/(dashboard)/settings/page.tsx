@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import DashboardShell, { T, AgentHeader, Card, Btn, Input, Badge } from '@/components/dashboard-shell'
 
-const AGENT = { emoji: '⚙', name: 'Paramètres', role: 'Configuration workspace', color: '#5A6472', tags: ['Workspace', 'Membres', 'Agents', 'Intégrations'] }
+const AGENT = { label: 'Paramètres', emoji: '⚙', name: 'Paramètres', role: 'Configuration workspace', color: '#5A6472', tags: ['Workspace', 'Membres', 'Agents', 'Intégrations'] }
 
 const WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -48,7 +48,7 @@ export default function SettingsPage() {
   const [members,       setMembers]       = useState<any[]>([])
   const [inviteEmail,   setInviteEmail]   = useState('')
   const [inviteRole,    setInviteRole]    = useState<'admin'|'viewer'>('viewer')
-  const [inviting,      setInviting]      = useState(false)
+  const [inviting] = useState(false)
 
   // Agents
   const [agents,        setAgents]        = useState<any[]>([])

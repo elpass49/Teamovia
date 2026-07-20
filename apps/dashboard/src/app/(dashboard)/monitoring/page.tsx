@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import DashboardShell, { T, AgentHeader, Card, Badge } from '@/components/dashboard-shell'
 
-const AGENT = { emoji: '📊', name: 'Monitoring', role: 'Supervision globale', color: '#5A6472', tags: ['Sessions', 'Leads', 'Latence', 'Tokens'] }
+const AGENT = { label: 'Monitoring', emoji: '📊', name: 'Monitoring', role: 'Supervision globale', color: '#5A6472', tags: ['Sessions', 'Leads', 'Latence', 'Tokens'] }
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)

@@ -154,35 +154,6 @@ function ButtonPrimary({
   )
 }
 
-function ButtonAccent({
-  children, onClick, disabled,
-}: {
-  children: React.ReactNode
-  onClick?: () => void
-  disabled?: boolean
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        background:   disabled ? T.accentSoft : T.accent,
-        color:        '#0B0F1A',
-        border:       'none',
-        borderRadius: T.radiusBtn,
-        padding:      '10px 20px',
-        fontSize:     '14px',
-        fontWeight:   600,
-        fontFamily:   T.fontBody,
-        cursor:       disabled ? 'not-allowed' : 'pointer',
-        transition:   '200ms ease-out',
-        opacity:      disabled ? .6 : 1,
-      }}
-    >
-      {children}
-    </button>
-  )
-}
 
 function EmptyState({ icon, title, subtitle }: { icon: string; title: string; subtitle?: string }) {
   return (

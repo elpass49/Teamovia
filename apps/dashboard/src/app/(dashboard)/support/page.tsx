@@ -7,7 +7,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import DashboardShell, { T, AgentHeader, Btn, EmptyState, Input, Badge } from '@/components/dashboard-shell'
 
-const AGENT = { emoji: '💬', name: 'Lina', role: 'Agent Support', color: '#1E3A8A', tags: ['Tickets', 'Résolution', 'Satisfaction'] }
+const AGENT = { label: 'Lina', emoji: '💬', name: 'Lina', role: 'Agent Support', color: '#1E3A8A', tags: ['Tickets', 'Résolution', 'Satisfaction'] }
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)

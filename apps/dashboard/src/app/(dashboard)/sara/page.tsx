@@ -3,11 +3,11 @@
  */
 'use client'
 
-import { useState, useEffect } from 'react'
-import DashboardShell, { T, AgentHeader, AGENTS, Btn, EmptyState, Card, Input, Badge } from '@/components/dashboard-shell'
+import { useState } from 'react'
+import DashboardShell, { T, AgentHeader, Btn, Card } from '@/components/dashboard-shell'
 
 
-const AGENT = { emoji: '⚙️', name: 'Sara', role: 'Agent Ops', color: '#16A34A', tags: ['Workflows', 'Onboarding', 'Coordination'] }
+const AGENT = { label: 'Sara', emoji: '⚙️', name: 'Sara', role: 'Agent Ops', color: '#16A34A', tags: ['Workflows', 'Onboarding', 'Coordination'] }
 const API_URL         = 'http://127.0.0.1:8000/v1'
 const WORKSPACE_TOKEN = 'b5299bf5-ad3a-4072-966e-8d4f4e94396e'
 const N8N_BASE        = 'https://n8n.sportnest.fr'
@@ -21,7 +21,6 @@ const WORKFLOWS = [
 const h = { 'Content-Type':'application/json', 'x-workspace-token': WORKSPACE_TOKEN }
 
 export default function SaraPage() {
-  const [logs,       setLogs]       = useState<any[]>([])
   const [active,     setActive]     = useState<string|null>(null)
   const [result,     setResult]     = useState<any|null>(null)
   const [error,      setError]      = useState('')
