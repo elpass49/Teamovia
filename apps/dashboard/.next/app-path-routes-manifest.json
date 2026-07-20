@@ -1,0 +1,13 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/(dashboard)/milo/page": "/milo",
+  "/(dashboard)/ava/page": "/ava",
+  "/(dashboard)/sara/page": "/sara",
+  "/(dashboard)/sales/page": "/sales",
+  "/(dashboard)/monitoring/page": "/monitoring",
+  "/(dashboard)/support/page": "/support",
+  "/(dashboard)/settings/page": "/settings",
+  "/page": "/",
+  "/(dashboard)/kb/page": "/kb",
+  "/login/page": "/login"
+}
